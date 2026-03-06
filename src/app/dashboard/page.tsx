@@ -158,7 +158,7 @@ export default function DashboardPage() {
       icon: <AssignmentIcon />,
       color: theme.palette.primary.main,
       description: "Run compliance checks and reports",
-      agentId: "5d851c63-a285-4405-9108-b5ac02b0859e",
+      agentId: "afdfe741-fc64-4225-a7af-0dc266b76388",
     },
     {
       id: "approvals",
@@ -174,7 +174,7 @@ export default function DashboardPage() {
       icon: <SecurityIcon />,
       color: theme.palette.warning.main,
       description: "Site overview and red sites",
-      agentId: "5d851c63-a285-4405-9108-b5ac02b0859e",
+      agentId: "878b09a5-9013-49d5-832c-512b064c5072",
     },
   ];
 
@@ -1294,7 +1294,6 @@ export default function DashboardPage() {
 
   const clearChat = () => {
     setActiveCards([]);
-    setPromptMessage(null);
     // Optionally clear all conversations
     setActiveConversations(new Map());
     localStorage.removeItem("activeConversations");

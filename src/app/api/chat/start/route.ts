@@ -45,8 +45,7 @@ export async function POST(request: NextRequest) {
 
     // Determine agent type
     const mappedAgentType = agentType === 'compliance' ? 'AA' : 'AA';
-
-    const url = `https://api.genx-dev.insightgen.ai/agent-runner/api/v1/orgs/${ORG_ID}/app/${APP_ID}/chat/sse`;
+    const url = `https://api.genx-dev.insightgen.ai/agent-runner/api/v1/orgs/${ORG_ID}/app/${APP_ID}/chat/sse/custom_agent`;
 
     // Prepare the request body for the external API
     const requestBody = {
