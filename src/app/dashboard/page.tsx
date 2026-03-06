@@ -49,7 +49,72 @@ import ComplianceReportCards from "../components/ComplianceReportCards";
 import ApprovalsCards from "../components/ApprovalsCards";
 import TowerCards from "../components/TowerCards";
 
-// ... (keep all existing interfaces)
+interface StreamStep {
+  title: string;
+  description: string;
+  timestamp?: string;
+  node_id?: string;
+  toolName?: string;
+  toolArgs?: any;
+  toolResponse?: any;
+  expanded?: boolean;
+}
+
+interface StreamData {
+  icon?: string;
+  title?: string;
+  description?: string;
+  steps: StreamStep[];
+}
+
+interface AgentThoughtTool {
+  thought: string;
+  toolActions: {
+    action: string;
+    argument: string;
+    output: string;
+    toolId?: string;
+  }[];
+}
+
+interface AgentStreamData {
+  icon: string;
+  title: string;
+  agentName: string;
+  thoughtsAndtoolsAction: AgentThoughtTool[];
+  finalResult: string;
+  isOpen: boolean;
+}
+
+interface AgentCard {
+  id: string;
+  agent: 'compliance' | 'approvals' | 'tower';
+  title: string;
+  timestamp: Date;
+  runId?: string;
+  convId?: string;
+  streamData?: StreamData;
+  agentStreamData?: AgentStreamData;
+  streaming?: boolean;
+  content?: React.ReactNode;
+  prompt?: string;
+}
+
+interface Agent {
+  id: string;
+  name: string;
+  icon: React.ReactNode;
+  color: string;
+  description: string;
+  agentId: string;
+}
+
+// Track active conversations per agent
+interface ActiveConversation {
+  convId: string;
+  createdAt: Date;
+  lastUsed: Date;
+}
 
 export default function DashboardPage() {
   const theme = useTheme();
@@ -60,7 +125,7 @@ export default function DashboardPage() {
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [streamingCard, setStreamingCard] = useState<string | null>(null);
-  const [promptMessage, setPromptMessage] = useState<{agent: Agent; message: string} | null>(null);
+
   // Add state for expanded accordions per card
   const [expandedAccordions, setExpandedAccordions] = useState<Record<string, boolean>>({});
   
@@ -347,16 +412,10 @@ export default function DashboardPage() {
       mentionedAgent = agents[0];
     }
 
-    // Set prompt message
-    setPromptMessage({
-      agent: mentionedAgent,
-      message: inputValue,
-    });
-
     setIsTyping(true);
 
     try {
-      // Step 1: Get or create conversation (reuses existing if available)
+      // Step 1: Get or create conversation
       const convId = await getOrCreateConversation(mentionedAgent.name);
 
       // Step 2: Start chat and get runId
@@ -367,7 +426,7 @@ export default function DashboardPage() {
         mentionedAgent.id,
       );
 
-      // Create new card
+      // Create new card with prompt stored
       const newCardId = Date.now().toString();
       const newCard: AgentCard = {
         id: newCardId,
@@ -382,12 +441,13 @@ export default function DashboardPage() {
         runId: runId,
         streaming: true,
         convId: convId,
+        prompt: inputValue, // Store the prompt in the card
       };
 
       setActiveCards((prev) => [...prev, newCard]);
       setStreamingCard(mentionedAgent.id);
 
-      // Step 3: Connect to SSE stream with enhanced handling
+      // Step 3: Connect to SSE stream
       await handleStreamData(runId, newCardId, lowerInput, convId);
     } catch (error) {
       console.error("Error in conversation flow:", error);
@@ -408,6 +468,7 @@ export default function DashboardPage() {
             },
           ],
         },
+        prompt: inputValue, // Also store prompt for error cards
       };
       setActiveCards((prev) => [...prev, errorCard]);
     } finally {
@@ -1295,31 +1356,27 @@ export default function DashboardPage() {
           {activeCards.length > 0 && (
             <Box sx={{ mb: 4 }}>
               <Grid container spacing={3}>
-                {activeCards.map((card) => {
-                  // Use the stored prompt message
-                  const cardPrompt = promptMessage;
-                  
+                {activeCards.map((card) => {                  
                   return (
                     <Grid item xs={12} key={card.id}>
                         {/* Prompt Message Section */}
-                        {cardPrompt && (
-                          <Paper sx={{ mb: 3, p: 2}}>                           
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                <Avatar sx={{ bgcolor: getAgentColor(card.agent), width: 28, height: 28 }}>
-                                  {card.agent === 'compliance' && <AssignmentIcon sx={{ fontSize: 16 }} />}
-                                  {card.agent === 'approvals' && <CheckCircleIcon sx={{ fontSize: 16 }} />}
-                                {card.agent === 'tower' && <SecurityIcon sx={{ fontSize: 16 }} />}
-                              </Avatar>
-                              <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                {cardPrompt.message}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-                                {card.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </Typography>
-                            </Box>
-                        </Paper>
-                        )}
-
+                        {card.prompt && (
+                      <Paper sx={{ mb: 3, p: 2 }}>                           
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Avatar sx={{ bgcolor: getAgentColor(card.agent), width: 28, height: 28 }}>
+                            {card.agent === 'compliance' && <AssignmentIcon sx={{ fontSize: 16 }} />}
+                            {card.agent === 'approvals' && <CheckCircleIcon sx={{ fontSize: 16 }} />}
+                            {card.agent === 'tower' && <SecurityIcon sx={{ fontSize: 16 }} />}
+                          </Avatar>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {card.prompt}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                            {card.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Typography>
+                        </Box>
+                      </Paper>
+                    )}
                         {/* Streaming Steps Accordion */}
                         {renderStreamSteps(card)}
 
