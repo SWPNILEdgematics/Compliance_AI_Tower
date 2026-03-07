@@ -109,7 +109,8 @@ interface AgentCard {
   streaming?: boolean;
   content?: React.ReactNode;
   prompt?: string;
-  toolResponseData?: ToolResponseData;
+  toolResponses?: ToolResponseData[]; // Array of streaming responses
+  finalResponse?: ToolResponseData; // Final END_RESPONSE
 }
 
 interface Agent {
@@ -133,17 +134,21 @@ interface ToolResponseData {
   type: 'table' | 'markdown' | 'options' | 'text';
   content: any;
   title?: string;
+  timestamp?: string;
+  toolName?: string;
 }
 
 // Helper function to parse and format tool responses
-const parseToolResponse = (toolName: string, responseData: any): ToolResponseData => {
+const parseToolResponse = (toolName: string, responseData: any, timestamp?: string): ToolResponseData => {
   try {
     // Handle direct text responses
     if (typeof responseData === 'string') {
       return {
         type: 'text',
-        title: 'Response',
-        content: responseData
+        title: `${toolName} Response`,
+        content: responseData,
+        timestamp,
+        toolName
       };
     }
 
@@ -151,8 +156,10 @@ const parseToolResponse = (toolName: string, responseData: any): ToolResponseDat
     if (responseData?.text) {
       return {
         type: 'text',
-        title: 'Response',
-        content: responseData.text
+        title: `${toolName} Response`,
+        content: responseData.text,
+        timestamp,
+        toolName
       };
     }
 
@@ -160,8 +167,10 @@ const parseToolResponse = (toolName: string, responseData: any): ToolResponseDat
     if (responseData?.content?.[0]?.text) {
       return {
         type: 'text',
-        title: 'Agent Response',
-        content: responseData.content[0].text
+        title: `${toolName} Response`,
+        content: responseData.content[0].text,
+        timestamp,
+        toolName
       };
     }
 
@@ -169,24 +178,49 @@ const parseToolResponse = (toolName: string, responseData: any): ToolResponseDat
     if (toolName === 'librarian_agent') {
       const response = responseData?.response;
       if (response?.checklist) {
-        // Convert checklist object to table format
+        // Convert checklist object (object of objects) to table format
         const checklist = response.checklist;
-        const keys = Object.keys(checklist);
-        const rows = checklist[keys[0]]?.map((_: any, index: number) => {
-          const row: any = {};
-          keys.forEach(key => {
-            row[key] = checklist[key]?.[index] || '';
-          });
-          return row;
-        }) || [];
         
+        // Get all keys from the first item to determine structure
+        const items = Object.values(checklist);
+        
+        if (items.length > 0 && typeof items[0] === 'object') {
+          // Get all unique keys from all objects
+          const allKeys = new Set<string>();
+          items.forEach((item: any) => {
+            if (item && typeof item === 'object') {
+              Object.keys(item).forEach(key => allKeys.add(key));
+            }
+          });
+          
+          const headers = Array.from(allKeys);
+          const rows = items.map((item: any) => {
+            const row: any = {};
+            headers.forEach(header => {
+              row[header] = item[header] || '';
+            });
+            return row;
+          });
+          
+          return {
+            type: 'table',
+            title: 'Compliance Checklist',
+            content: {
+              headers,
+              rows
+            },
+            timestamp,
+            toolName
+          };
+        }
+        
+        // Fallback: if not an object of objects, return as formatted JSON
         return {
-          type: 'table',
+          type: 'text',
           title: 'Compliance Checklist',
-          content: {
-            headers: keys,
-            rows: rows
-          }
+          content: JSON.stringify(checklist, null, 2),
+          timestamp,
+          toolName
         };
       }
     }
@@ -198,14 +232,18 @@ const parseToolResponse = (toolName: string, responseData: any): ToolResponseDat
         return {
           type: 'markdown',
           title: 'Audit Report',
-          content: response.report_markdown.replace(/\\n/g, '\n') // Fix escaped newlines
+          content: response.report_markdown.replace(/\\n/g, '\n'), // Fix escaped newlines
+          timestamp,
+          toolName
         };
       } else if (response) {
         // Fallback to table for other response structures
         return {
           type: 'table',
           title: 'Report Data',
-          content: response
+          content: response,
+          timestamp,
+          toolName
         };
       }
     }
@@ -217,7 +255,9 @@ const parseToolResponse = (toolName: string, responseData: any): ToolResponseDat
         return {
           type: 'text',
           title: 'Database Operation Result',
-          content: response.result
+          content: response.result,
+          timestamp,
+          toolName
         };
       }
     }
@@ -236,7 +276,9 @@ const parseToolResponse = (toolName: string, responseData: any): ToolResponseDat
               content: {
                 headers: headers,
                 rows: findings
-              }
+              },
+              timestamp,
+              toolName
             };
           }
         } catch (e) {
@@ -245,21 +287,46 @@ const parseToolResponse = (toolName: string, responseData: any): ToolResponseDat
       }
     }
 
-    // Handle get_user_choice tool (this is a TOOLCALL, not TOOLCALLRESULT)
-    // This will be handled separately in the TOOLCALL section
+    // Handle findings array in response
+    if (responseData?.findings && Array.isArray(responseData.findings) && responseData.findings.length > 0) {
+      const findings = responseData.findings;
+      const headers = Object.keys(findings[0]).filter(key => key !== 'id');
+      const rows = findings.map((finding: any) => {
+        const row: any = {};
+        headers.forEach(header => {
+          row[header] = finding[header] || '';
+        });
+        return row;
+      });
+      
+      return {
+        type: 'table',
+        title: `Audit Findings - ${responseData.audit_id || 'Results'}`,
+        content: {
+          headers: headers,
+          rows: rows
+        },
+        timestamp,
+        toolName
+      };
+    }
 
     // Default: return as formatted JSON
     return {
       type: 'text',
-      title: 'Response',
-      content: JSON.stringify(responseData, null, 2)
+      title: `${toolName} Response`,
+      content: JSON.stringify(responseData, null, 2),
+      timestamp,
+      toolName
     };
   } catch (error) {
     console.error('Error parsing tool response:', error);
     return {
       type: 'text',
       title: 'Error Parsing Response',
-      content: 'Unable to parse response data'
+      content: 'Unable to parse response data',
+      timestamp,
+      toolName
     };
   }
 };
@@ -274,7 +341,7 @@ const ToolResponseRenderer: React.FC<{ data: ToolResponseData }> = ({ data }) =>
         variant="outlined"
         sx={{
           p: 3,
-          mt: 2,
+          mt: 1,
           bgcolor: alpha(theme.palette.background.default, 0.5),
           '& pre': {
             backgroundColor: alpha(theme.palette.common.black, 0.05),
@@ -310,14 +377,14 @@ const ToolResponseRenderer: React.FC<{ data: ToolResponseData }> = ({ data }) =>
     
     if (!headers || !rows || rows.length === 0) {
       return (
-        <Typography color="text.secondary" sx={{ mt: 2 }}>
+        <Typography color="text.secondary" sx={{ mt: 1 }}>
           No table data available
         </Typography>
       );
     }
 
     return (
-      <TableContainer component={Paper} sx={{ mt: 2, maxHeight: 400 }}>
+      <TableContainer component={Paper} sx={{ mt: 1, maxHeight: 400 }}>
         <Table stickyHeader size="small">
           <TableHead>
             <TableRow>
@@ -346,7 +413,7 @@ const ToolResponseRenderer: React.FC<{ data: ToolResponseData }> = ({ data }) =>
 
   if (data.type === 'options') {
     return (
-      <List sx={{ mt: 2, bgcolor: alpha(theme.palette.primary.main, 0.02), p: 2, borderRadius: 1 }}>
+      <List sx={{ mt: 1, bgcolor: alpha(theme.palette.primary.main, 0.02), p: 2, borderRadius: 1 }}>
         {data.content.map((option: string, index: number) => (
           <ListItem key={index} sx={{ py: 0.5 }}>
             <MuiListItemText 
@@ -365,7 +432,7 @@ const ToolResponseRenderer: React.FC<{ data: ToolResponseData }> = ({ data }) =>
       variant="outlined"
       sx={{
         p: 2,
-        mt: 2,
+        mt: 1,
         bgcolor: alpha(theme.palette.background.default, 0.5),
         fontFamily: 'monospace',
         fontSize: '0.875rem',
@@ -407,12 +474,6 @@ export default function DashboardPage() {
   const actionsRef = useRef<any[]>([]);
   const approvalsRef = useRef<any[]>([]);
   const messageIdRef = useRef<string>("");
-
-  // API constants
-  const ORG_ID = "f9f0d317-ce64-4cba-8379-696cfeacbc42";
-  const APP_ID = "9aeea00b-ec69-4291-9273-ee287306a331";
-  const API_KEY =
-    "gAAAAABpadaMNeKS5gsCoJI_KlIswU7RDQKXAUFSE35lwUOKKNzgddxC5mIkQF-8-IbvZXA5SB42lIToSw8_oe84iI3lgTLx2yZ9_VJdBJ54GNei1nn7FVGfqVLRGI8RZ5pEEYzh09Po";
 
   const agents: Agent[] = [
     {
@@ -582,19 +643,15 @@ export default function DashboardPage() {
   const getOrCreateConversation = async (
     agentType: string,
   ): Promise<string> => {
-    // Check if we have an active conversation for this agent
     const existing = activeConversations.get(agentType);
 
-    // If exists and is less than 1 hour old, reuse it
     if (existing) {
       const age = moment().diff(moment(existing.lastUsed), "minutes");
       if (age < 60) {
-        // Reuse conversations less than 1 hour old
         console.log(
           `Reusing existing conversation ${existing.convId} for ${agentType} (age: ${age} minutes)`,
         );
 
-        // Update last used time
         setActiveConversations((prev) => {
           const updated = new Map(prev);
           updated.set(agentType, {
@@ -612,10 +669,8 @@ export default function DashboardPage() {
       }
     }
 
-    // Create new conversation
     const convId = await createConversation(agentType);
 
-    // Store it
     setActiveConversations((prev) => {
       const updated = new Map(prev);
       updated.set(agentType, {
@@ -629,37 +684,12 @@ export default function DashboardPage() {
     return convId;
   };
 
-  // Clear conversation for an agent (useful if you want to start fresh)
   const clearAgentConversation = (agentType: string) => {
     setActiveConversations((prev) => {
       const updated = new Map(prev);
       updated.delete(agentType);
       return updated;
     });
-  };
-
-  const simulateStreaming = (agentId: string, content: React.ReactNode) => {
-    setStreamingCard(agentId);
-
-    // Simulate streaming effect
-    setTimeout(() => {
-      setStreamingCard(null);
-      setActiveCards((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          agent: agentId as "compliance" | "approvals" | "tower",
-          title:
-            agentId === "compliance"
-              ? "Compliance Report"
-              : agentId === "approvals"
-                ? "Approvals Required"
-                : "Tower Overview",
-          content: content,
-          timestamp: new Date(),
-        },
-      ]);
-    }, 1500);
   };
 
   const handleSendMessage = async () => {
@@ -678,10 +708,8 @@ export default function DashboardPage() {
     setIsTyping(true);
 
     try {
-      // Step 1: Get or create conversation
       const convId = await getOrCreateConversation(mentionedAgent.name);
 
-      // Step 2: Start chat and get runId
       const runId = await startChat(
         convId,
         inputValue.replace(`@${mentionedAgent.name}`, "").trim(),
@@ -689,7 +717,6 @@ export default function DashboardPage() {
         mentionedAgent.id,
       );
 
-      // Create new card with prompt stored
       const newCardId = Date.now().toString();
       const newCard: AgentCard = {
         id: newCardId,
@@ -704,13 +731,13 @@ export default function DashboardPage() {
         runId: runId,
         streaming: true,
         convId: convId,
-        prompt: inputValue, // Store the prompt in the card
+        prompt: inputValue,
+        toolResponses: [], // Initialize empty array
       };
 
       setActiveCards((prev) => [...prev, newCard]);
       setStreamingCard(mentionedAgent.id);
 
-      // Step 3: Connect to SSE stream
       await handleStreamData(runId, newCardId, lowerInput, convId);
     } catch (error) {
       console.error("Error in conversation flow:", error);
@@ -731,7 +758,7 @@ export default function DashboardPage() {
             },
           ],
         },
-        prompt: inputValue, // Also store prompt for error cards
+        prompt: inputValue,
       };
       setActiveCards((prev) => [...prev, errorCard]);
     } finally {
@@ -767,7 +794,6 @@ export default function DashboardPage() {
           if (response.ok) {
             console.log("Stream connection opened for runId:", runId);
 
-            // Initialize stream data for this card
             setActiveCards((prev) =>
               prev.map((card) => {
                 if (card.id === cardId) {
@@ -792,6 +818,7 @@ export default function DashboardPage() {
                       finalResult: "",
                       isOpen: true,
                     },
+                    toolResponses: [], // Reset responses
                   };
                 }
                 return card;
@@ -826,7 +853,6 @@ export default function DashboardPage() {
                       const thoughtContent =
                         typeof data === "string" ? data : data?.content;
 
-                      // Update stream data
                       setActiveCards((prev) =>
                         prev.map((card) => {
                           if (card.id === cardId) {
@@ -841,7 +867,6 @@ export default function DashboardPage() {
                               timestamp: moment().format("hh:mm:ss"),
                             });
 
-                            // Update agent stream data
                             const updatedAgentStreamData = {
                               ...card.agentStreamData,
                             };
@@ -871,22 +896,28 @@ export default function DashboardPage() {
                         const toolCall =
                           typeof data === "string" ? JSON.parse(data) : data;
                         
-                        // Handle get_user_choice specifically for options display
                         const toolName = toolCall?.content?.[0]?.name || toolCall?.tool_name;
+                        
+                        // Handle get_user_choice specifically for options display
                         if (toolName === 'get_user_choice') {
                           const options = toolCall?.content?.[0]?.args?.options || toolCall?.tool_kwargs?.options;
                           
                           if (options) {
+                            const optionsResponse: ToolResponseData = {
+                              type: 'options',
+                              title: 'Please choose an option:',
+                              content: options,
+                              timestamp: moment().format("hh:mm:ss"),
+                              toolName
+                            };
+                            
                             setActiveCards((prev) =>
                               prev.map((card) => {
                                 if (card.id === cardId) {
+                                  const existingResponses = card.toolResponses || [];
                                   return {
                                     ...card,
-                                    toolResponseData: {
-                                      type: 'options',
-                                      title: 'Please choose an option:',
-                                      content: options
-                                    }
+                                    toolResponses: [...existingResponses, optionsResponse]
                                   };
                                 }
                                 return card;
@@ -925,7 +956,6 @@ export default function DashboardPage() {
                                 updatedStreamData.steps = [];
                               }
 
-                              // Add tool call steps
                               normalizedToolCalls.forEach((tc) => {
                                 updatedStreamData.steps.push({
                                   title: `Calling: ${tc.tool_name}`,
@@ -937,7 +967,6 @@ export default function DashboardPage() {
                                 });
                               });
 
-                              // Update agent stream data
                               const updatedAgentStreamData = {
                                 ...card.agentStreamData,
                               };
@@ -1010,22 +1039,24 @@ export default function DashboardPage() {
                         const toolResult =
                           typeof data === "string" ? JSON.parse(data) : data;
                         
-                        // Get the tool name and response
                         const content = toolResult?.content?.[0];
                         const toolName = content?.name || toolResult?.tool_name;
                         const responseData = content?.response || toolResult?.tool_response;
 
                         if (toolName && responseData) {
-                          // Parse the response based on tool name
-                          const parsedResponse = parseToolResponse(toolName, { response: responseData });
+                          const parsedResponse = parseToolResponse(
+                            toolName, 
+                            { response: responseData },
+                            moment().format("hh:mm:ss")
+                          );
                           
-                          // Update the card with parsed response
                           setActiveCards((prev) =>
                             prev.map((card) => {
                               if (card.id === cardId) {
+                                const existingResponses = card.toolResponses || [];
                                 return {
                                   ...card,
-                                  toolResponseData: parsedResponse
+                                  toolResponses: [...existingResponses, parsedResponse]
                                 };
                               }
                               return card;
@@ -1070,7 +1101,6 @@ export default function DashboardPage() {
                             if (card.id === cardId) {
                               const updatedStreamData = { ...card.streamData };
 
-                              // Add tool response steps
                               normalizedToolResults.forEach((tr) => {
                                 updatedStreamData.steps.push({
                                   title: `Response: ${tr.tool_name}`,
@@ -1080,7 +1110,6 @@ export default function DashboardPage() {
                                 });
                               });
 
-                              // Update agent stream data with tool outputs
                               const updatedAgentStreamData = {
                                 ...card.agentStreamData,
                               };
@@ -1135,41 +1164,7 @@ export default function DashboardPage() {
                     break;
 
                   case "<END_RESPONSE>":
-                    // Handle both step types: "AGENTOUTPUT" or the default case
                     if (step === "AGENTOUTPUT" || !step) {
-                      // Extract the response text from the nested structure
-                      let responseText = "";
-                      
-                      // Navigate through the nested data structure
-                      if (data?.response) {
-                        // Direct response field
-                        responseText = data.response;
-                      } else if (data?.content?.[0]?.text) {
-                        // Nested in content array with text field
-                        responseText = data.content[0].text;
-                      } else if (data?.content?.[0]?.response) {
-                        // Nested in content array with response field
-                        responseText = data.content[0].response;
-                      } else if (data?.chat_response?.response) {
-                        // Nested in chat_response
-                        responseText = data.chat_response.response;
-                      } else if (typeof data === 'string') {
-                        // Direct string data
-                        responseText = data;
-                      } else if (data?.content && Array.isArray(data.content)) {
-                        // Try to extract text from any content item
-                        for (const item of data.content) {
-                          if (item?.text) {
-                            responseText = item.text;
-                            break;
-                          } else if (item?.response) {
-                            responseText = item.response;
-                            break;
-                          }
-                        }
-                      }
-
-                      // Find which agent was mentioned in the input
                       const mentionedAgent = agents.find((agent) =>
                         lowerInput
                           ?.toLowerCase()
@@ -1177,18 +1172,205 @@ export default function DashboardPage() {
                       );
 
                       const agentId = mentionedAgent?.id || "compliance";
+                      
+                      if (agentId === "tower") {
+                        setActiveCards((prev) =>
+                          prev.map((card) => {
+                            if (card.id === cardId) {
+                              const updatedCard = {
+                                ...card,
+                                streamData: {
+                                  ...card.streamData,
+                                  steps: [
+                                    ...(card.streamData?.steps || []),
+                                    {
+                                      title: "Agent Response",
+                                      description: "Agent completed processing",
+                                      timestamp: moment().format("hh:mm:ss"),
+                                    }
+                                  ],
+                                  icon: "success-icon-popup.svg",
+                                  title: "Generated Result",
+                                },
+                                agentStreamData: {
+                                  ...card.agentStreamData,
+                                  icon: "success-icon-popup.svg",
+                                  title: "Generated Result",
+                                  finalResult: "",
+                                  isOpen: false,
+                                },
+                                streaming: false,
+                              };
+
+                              updatedCard.content = <TowerCards />;
+                              return updatedCard;
+                            }
+                            return card;
+                          }),
+                        );
+
+                        setStreamingCard(null);
+                        setIsTyping(false);
+                        resolve();
+                        return;
+                      }
+                      
+                      let responseContent = "";
+                      let responseData = null;
+                      
+                      if (data?.response) {
+                        responseData = data.response;
+                        responseContent = typeof data.response === 'string' ? data.response : JSON.stringify(data.response);
+                      } else if (data?.content?.[0]?.text) {
+                        responseContent = data.content[0].text;
+                        responseData = { text: data.content[0].text };
+                      } else if (data?.content?.[0]?.response) {
+                        responseData = data.content[0].response;
+                        responseContent = typeof data.content[0].response === 'string' 
+                          ? data.content[0].response 
+                          : JSON.stringify(data.content[0].response);
+                      } else if (data?.chat_response?.response) {
+                        responseData = data.chat_response.response;
+                        responseContent = typeof data.chat_response.response === 'string' 
+                          ? data.chat_response.response 
+                          : JSON.stringify(data.chat_response.response);
+                      } else if (typeof data === 'string') {
+                        responseContent = data;
+                        responseData = { text: data };
+                      } else if (data?.content && Array.isArray(data.content)) {
+                        for (const item of data.content) {
+                          if (item?.text) {
+                            responseContent = item.text;
+                            responseData = { text: item.text };
+                            break;
+                          } else if (item?.response) {
+                            responseData = item.response;
+                            responseContent = typeof item.response === 'string' 
+                              ? item.response 
+                              : JSON.stringify(item.response);
+                            break;
+                          }
+                        }
+                      } else if (data && typeof data === 'object') {
+                        responseData = data;
+                        responseContent = JSON.stringify(data);
+                      }
+
+                      let finalResponseData: ToolResponseData;
+                      
+                      if (typeof responseData === 'string' && responseData.includes('|') && responseData.includes('\n')) {
+                        finalResponseData = {
+                          type: 'markdown',
+                          title: 'Final Response',
+                          content: responseData,
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      } 
+                      else if (responseData?.report_markdown) {
+                        finalResponseData = {
+                          type: 'markdown',
+                          title: 'Audit Report',
+                          content: responseData.report_markdown.replace(/\\n/g, '\n'),
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      }
+                      else if (responseData?.checklist) {
+                        const checklist = responseData.checklist;
+                        const keys = Object.keys(checklist);
+                        const rows = checklist[keys[0]]?.map((_: any, index: number) => {
+                          const row: any = {};
+                          keys.forEach(key => {
+                            row[key] = checklist[key]?.[index] || '';
+                          });
+                          return row;
+                        }) || [];
+                        
+                        finalResponseData = {
+                          type: 'table',
+                          title: 'Compliance Checklist',
+                          content: {
+                            headers: keys,
+                            rows: rows
+                          },
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      }
+                      else if (responseData?.findings && Array.isArray(responseData.findings) && responseData.findings.length > 0) {
+                        const findings = responseData.findings;
+                        const headers = Object.keys(findings[0]).filter(key => key !== 'id');
+                        const rows = findings.map((finding: any) => {
+                          const row: any = {};
+                          headers.forEach(header => {
+                            row[header] = finding[header] || '';
+                          });
+                          return row;
+                        });
+                        
+                        finalResponseData = {
+                          type: 'table',
+                          title: `Audit Findings - ${responseData.audit_id || 'Results'}`,
+                          content: {
+                            headers: headers,
+                            rows: rows
+                          },
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      }
+                      else if (Array.isArray(responseData) && responseData.length > 0) {
+                        const headers = Object.keys(responseData[0]);
+                        finalResponseData = {
+                          type: 'table',
+                          title: 'Results',
+                          content: {
+                            headers: headers,
+                            rows: responseData
+                          },
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      }
+                      else if (responseData?.result && typeof responseData.result === 'string') {
+                        try {
+                          const parsedResult = JSON.parse(responseData.result);
+                          if (Array.isArray(parsedResult) && parsedResult.length > 0) {
+                            const headers = Object.keys(parsedResult[0]);
+                            finalResponseData = {
+                              type: 'table',
+                              title: 'Findings from Database',
+                              content: {
+                                headers: headers,
+                                rows: parsedResult
+                              },
+                              timestamp: moment().format("hh:mm:ss")
+                            };
+                          } else {
+                            finalResponseData = {
+                              type: 'text',
+                              title: 'Response',
+                              content: responseData.result,
+                              timestamp: moment().format("hh:mm:ss")
+                            };
+                          }
+                        } catch (e) {
+                          finalResponseData = {
+                            type: 'text',
+                            title: 'Response',
+                            content: responseData.result,
+                            timestamp: moment().format("hh:mm:ss")
+                          };
+                        }
+                      }
+                      else {
+                        finalResponseData = {
+                          type: 'text',
+                          title: 'Agent Response',
+                          content: responseContent || 'No response text available',
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      }
 
                       setActiveCards((prev) =>
                         prev.map((card) => {
                           if (card.id === cardId) {
-                            // Create tool response data for the final message
-                            const toolResponseData: ToolResponseData = {
-                              type: 'text',
-                              title: 'Agent Response',
-                              content: responseText || 'No response text available'
-                            };
-
-                            // Update the card with final data
                             const updatedCard = {
                               ...card,
                               streamData: {
@@ -1208,20 +1390,17 @@ export default function DashboardPage() {
                                 ...card.agentStreamData,
                                 icon: "success-icon-popup.svg",
                                 title: "Generated Result",
-                                finalResult: responseText,
+                                finalResult: typeof responseContent === 'string' ? responseContent : JSON.stringify(responseContent),
                                 isOpen: false,
                               },
-                              toolResponseData, // Add the response as toolResponseData
+                              finalResponse: finalResponseData,
                               streaming: false,
                             };
 
-                            // Add the appropriate response component based on agent
                             if (agentId === "compliance") {
                               updatedCard.content = <ComplianceReportCards />;
                             } else if (agentId === "approvals") {
                               updatedCard.content = <ApprovalsCards />;
-                            } else if (agentId === "tower") {
-                              updatedCard.content = <TowerCards />;
                             }
 
                             return updatedCard;
@@ -1235,7 +1414,7 @@ export default function DashboardPage() {
                       resolve();
                     }
                     break;
-
+                    
                   case "<ERROR>":
                     const errorMessage =
                       parsedData?.error?.message ||
@@ -1334,24 +1513,7 @@ export default function DashboardPage() {
                     break;
 
                   case "<END_RESPONSE>":
-                    // Handle workflow END_RESPONSE with AGENTOUTPUT
                     if (step === "AGENTOUTPUT" || !step) {
-                      let finalResponse = "";
-                      
-                      // Extract response from various possible structures
-                      if (data?.chat_response?.response) {
-                        finalResponse = data.chat_response.response;
-                      } else if (data?.response) {
-                        finalResponse = data.response;
-                      } else if (data?.content?.[0]?.text) {
-                        finalResponse = data.content[0].text;
-                      } else if (data?.content?.[0]?.response) {
-                        finalResponse = data.content[0].response;
-                      } else if (typeof data === 'string') {
-                        finalResponse = data;
-                      }
-
-                      // Find which agent was mentioned
                       const workflowMentionedAgent = agents.find((agent) =>
                         lowerInput
                           ?.toLowerCase()
@@ -1360,15 +1522,157 @@ export default function DashboardPage() {
 
                       const workflowAgentId = workflowMentionedAgent?.id || "compliance";
 
+                      if (workflowAgentId === "tower") {
+                        setActiveCards((prev) =>
+                          prev.map((card) => {
+                            if (card.id === cardId) {
+                              const updatedCard = {
+                                ...card,
+                                streamData: {
+                                  ...card.streamData,
+                                  steps: [
+                                    ...(card.streamData?.steps || []),
+                                    {
+                                      title: "Workflow Complete",
+                                      description: "Workflow executed successfully",
+                                      timestamp: moment().format("hh:mm:ss"),
+                                    }
+                                  ],
+                                  icon: "success-icon-popup.svg",
+                                  title: "Processed Workflow",
+                                },
+                                agentStreamData: {
+                                  ...card.agentStreamData,
+                                  icon: "success-icon-popup.svg",
+                                  title: "Processed Workflow",
+                                  agentName: "Workflow Executed",
+                                  finalResult: "",
+                                  isOpen: false,
+                                },
+                                streaming: false,
+                              };
+
+                              updatedCard.content = <TowerCards />;
+                              return updatedCard;
+                            }
+                            return card;
+                          }),
+                        );
+
+                        setStreamingCard(null);
+                        setIsTyping(false);
+                        resolve();
+                        return;
+                      }
+
+                      let finalResponse = "";
+                      let responseData = null;
+                      
+                      if (data?.chat_response?.response) {
+                        responseData = data.chat_response.response;
+                        finalResponse = typeof data.chat_response.response === 'string' 
+                          ? data.chat_response.response 
+                          : JSON.stringify(data.chat_response.response);
+                      } else if (data?.response) {
+                        responseData = data.response;
+                        finalResponse = typeof data.response === 'string' 
+                          ? data.response 
+                          : JSON.stringify(data.response);
+                      } else if (data?.content?.[0]?.text) {
+                        responseData = { text: data.content[0].text };
+                        finalResponse = data.content[0].text;
+                      } else if (data?.content?.[0]?.response) {
+                        responseData = data.content[0].response;
+                        finalResponse = typeof data.content[0].response === 'string' 
+                          ? data.content[0].response 
+                          : JSON.stringify(data.content[0].response);
+                      } else if (typeof data === 'string') {
+                        responseData = { text: data };
+                        finalResponse = data;
+                      } else if (data && typeof data === 'object') {
+                        responseData = data;
+                        finalResponse = JSON.stringify(data);
+                      }
+
+                      let workflowFinalResponse: ToolResponseData;
+                      
+                      if (responseData?.findings && Array.isArray(responseData.findings) && responseData.findings.length > 0) {
+                        const findings = responseData.findings;
+                        const headers = Object.keys(findings[0]).filter(key => key !== 'id');
+                        const rows = findings.map((finding: any) => {
+                          const row: any = {};
+                          headers.forEach(header => {
+                            row[header] = finding[header] || '';
+                          });
+                          return row;
+                        });
+                        
+                        workflowFinalResponse = {
+                          type: 'table',
+                          title: `Audit Findings - ${responseData.audit_id || 'Results'}`,
+                          content: {
+                            headers: headers,
+                            rows: rows
+                          },
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      } else if (typeof responseData === 'string' && responseData.includes('|') && responseData.includes('\n')) {
+                        workflowFinalResponse = {
+                          type: 'markdown',
+                          title: 'Workflow Response',
+                          content: responseData,
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      } else if (responseData?.report_markdown) {
+                        workflowFinalResponse = {
+                          type: 'markdown',
+                          title: 'Audit Report',
+                          content: responseData.report_markdown.replace(/\\n/g, '\n'),
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      } else if (responseData?.checklist) {
+                        const checklist = responseData.checklist;
+                        const keys = Object.keys(checklist);
+                        const rows = checklist[keys[0]]?.map((_: any, index: number) => {
+                          const row: any = {};
+                          keys.forEach(key => {
+                            row[key] = checklist[key]?.[index] || '';
+                          });
+                          return row;
+                        }) || [];
+                        
+                        workflowFinalResponse = {
+                          type: 'table',
+                          title: 'Compliance Checklist',
+                          content: {
+                            headers: keys,
+                            rows: rows
+                          },
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      } else if (Array.isArray(responseData) && responseData.length > 0) {
+                        const headers = Object.keys(responseData[0]);
+                        workflowFinalResponse = {
+                          type: 'table',
+                          title: 'Results',
+                          content: {
+                            headers: headers,
+                            rows: responseData
+                          },
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      } else {
+                        workflowFinalResponse = {
+                          type: 'text',
+                          title: 'Workflow Response',
+                          content: finalResponse || 'Workflow completed successfully',
+                          timestamp: moment().format("hh:mm:ss")
+                        };
+                      }
+
                       setActiveCards((prev) =>
                         prev.map((card) => {
                           if (card.id === cardId) {
-                            const toolResponseData: ToolResponseData = {
-                              type: 'text',
-                              title: 'Workflow Response',
-                              content: finalResponse || 'Workflow completed successfully'
-                            };
-
                             const updatedCard = {
                               ...card,
                               streamData: {
@@ -1392,17 +1696,14 @@ export default function DashboardPage() {
                                 finalResult: finalResponse,
                                 isOpen: false,
                               },
-                              toolResponseData,
+                              finalResponse: workflowFinalResponse,
                               streaming: false,
                             };
 
-                            // Add the appropriate response component
                             if (workflowAgentId === "compliance") {
                               updatedCard.content = <ComplianceReportCards />;
                             } else if (workflowAgentId === "approvals") {
                               updatedCard.content = <ApprovalsCards />;
-                            } else if (workflowAgentId === "tower") {
-                              updatedCard.content = <TowerCards />;
                             }
 
                             return updatedCard;
@@ -1416,7 +1717,6 @@ export default function DashboardPage() {
                       resolve();
                     }
                     break;
-
                   case "<ERROR>":
                     const workflowError =
                       parsedData?.error?.message ||
@@ -1482,7 +1782,6 @@ export default function DashboardPage() {
     });
   };
 
-  // This function now just renders the steps without using hooks
   const renderStreamSteps = (card: AgentCard) => {
     if (
       !card.streamData?.steps &&
@@ -1492,7 +1791,7 @@ export default function DashboardPage() {
     }
 
     const steps = card.streamData?.steps || [];
-    const isExpanded = expandedAccordions[card.id] ?? true; // Default to expanded
+    const isExpanded = expandedAccordions[card.id] ?? true;
 
     if (steps.length === 0) return null;
 
@@ -1690,15 +1989,12 @@ export default function DashboardPage() {
 
   const clearChat = () => {
     setActiveCards([]);
-    // Optionally clear all conversations
     setActiveConversations(new Map());
     localStorage.removeItem("activeConversations");
   };
 
-  // Add function to manually clear conversation for an agent
   const handleClearAgentConversation = (agentName: string) => {
     clearAgentConversation(agentName);
-    // Show a snackbar or toast notification
     console.log(`Cleared conversation for ${agentName}`);
   };
 
@@ -1741,85 +2037,150 @@ export default function DashboardPage() {
                 {activeCards.map((card) => {                  
                   return (
                     <Grid item xs={12} key={card.id}>
-                        {/* Prompt Message Section */}
-                        {card.prompt && (
-                      <Paper sx={{ mb: 3, p: 2 }}>                           
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Avatar sx={{ bgcolor: getAgentColor(card.agent), width: 28, height: 28 }}>
-                            {card.agent === 'compliance' && <AssignmentIcon sx={{ fontSize: 16 }} />}
-                            {card.agent === 'approvals' && <CheckCircleIcon sx={{ fontSize: 16 }} />}
-                            {card.agent === 'tower' && <SecurityIcon sx={{ fontSize: 16 }} />}
-                          </Avatar>
-                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                            {card.prompt}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-                            {card.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </Typography>
-                        </Box>
-                      </Paper>
-                    )}
-                        {/* Streaming Steps Accordion */}
-                        {renderStreamSteps(card)}
-
-                        {/* Tool Response Data - New Section */}
-                        {card.toolResponseData && (
-                          <Box sx={{ mt: 3 }}>
-                            {card.toolResponseData.title && (
-                              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                                {card.toolResponseData.title}
-                              </Typography>
-                            )}
-                            <ToolResponseRenderer data={card.toolResponseData} />
+                      {/* Prompt Message Section */}
+                      {card.prompt && (
+                        <Paper sx={{ mb: 3, p: 2 }}>                           
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Avatar sx={{ bgcolor: getAgentColor(card.agent), width: 28, height: 28 }}>
+                              {card.agent === 'compliance' && <AssignmentIcon sx={{ fontSize: 16 }} />}
+                              {card.agent === 'approvals' && <CheckCircleIcon sx={{ fontSize: 16 }} />}
+                              {card.agent === 'tower' && <SecurityIcon sx={{ fontSize: 16 }} />}
+                            </Avatar>
+                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                              {card.prompt}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                              {card.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </Typography>
                           </Box>
-                        )}
+                        </Paper>
+                      )}
+                      
+                      {/* Streaming Steps Accordion */}
+                      {renderStreamSteps(card)}
 
-                        {/* Streaming Indicator */}
-                        {card.streaming && streamingCard === card.agent && (
-                          <Paper
-                            sx={{
-                              p: 2,
-                              mt: 2,
-                              bgcolor: alpha(getAgentColor(card.agent), 0.05),
-                              border: `1px solid ${alpha(getAgentColor(card.agent), 0.3)}`,
-                              borderRadius: 2
-                            }}
-                          >
-                            <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                              <Avatar
-                                sx={{
-                                  bgcolor: getAgentColor(card.agent),
-                                  width: 32,
-                                  height: 32,
-                                }}
-                              >
-                                {card.agent === "compliance" && <AssignmentIcon sx={{ fontSize: 20 }} />}
-                                {card.agent === "approvals" && <CheckCircleIcon sx={{ fontSize: 20 }} />}
-                                {card.agent === "tower" && <SecurityIcon sx={{ fontSize: 20 }} />}
-                              </Avatar>
-                              <Box>
-                                <Typography variant="subtitle2" sx={{ color: getAgentColor(card.agent) }}>
-                                  {card.agent === "compliance"
-                                    ? "Compliance Agent"
-                                    : card.agent === "approvals"
-                                      ? "Approvals Agent"
-                                      : "Tower Agent"}{" "}
-                                  is responding...
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  Generating response ⚡
-                                </Typography>
+                      {/* Streaming Tool Responses - Show as they arrive */}
+                      {card.toolResponses && card.toolResponses.length > 0 && card.streaming && (
+                        <Box sx={{ mt: 3 }}>
+                          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'warning.main' }}>
+                            Streaming Responses ({card.toolResponses.length})
+                          </Typography>
+                          {card.toolResponses.map((response, index) => (
+                            <Box key={index} sx={{ mb: 3 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <Chip 
+                                  size="small" 
+                                  label={response.toolName || 'Tool Response'} 
+                                  sx={{ 
+                                    bgcolor: alpha(theme.palette.primary.main, 0.1),
+                                    fontSize: '0.7rem',
+                                    height: 20
+                                  }} 
+                                />
+                                {response.timestamp && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {response.timestamp}
+                                  </Typography>
+                                )}
                               </Box>
+                              <ToolResponseRenderer data={response} />
                             </Box>
-                          </Paper>
-                        )}
+                          ))}
+                        </Box>
+                      )}
 
-                        {/* Card Content */}
-                        {card.content && !card.streaming && (
-                          <Box sx={{ mt: 3 }}>
-                            {card.content}
+                      {/* Final Response - Show when streaming is complete */}
+                      {card.finalResponse && !card.streaming && (
+                        <Box sx={{ mt: 3 }}>
+                          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
+                            Final Result
+                          </Typography>
+                          <ToolResponseRenderer data={card.finalResponse} />
+                        </Box>
+                      )}
+
+                      {/* All Tool Responses (when not streaming) - Show all accumulated responses */}
+                      {card.toolResponses && card.toolResponses.length > 0 && !card.streaming && !card.finalResponse && (
+                        <Box sx={{ mt: 3 }}>
+                          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
+                            Tool Responses ({card.toolResponses.length})
+                          </Typography>
+                          {card.toolResponses.map((response, index) => (
+                            <Box key={index} sx={{ mb: 3 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <Chip 
+                                  size="small" 
+                                  label={response.toolName || 'Tool Response'} 
+                                  sx={{ 
+                                    bgcolor: alpha(theme.palette.primary.main, 0.1),
+                                    fontSize: '0.7rem',
+                                    height: 20
+                                  }} 
+                                />
+                                {response.timestamp && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {response.timestamp}
+                                  </Typography>
+                                )}
+                              </Box>
+                              <ToolResponseRenderer data={response} />
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
+
+                      {/* Streaming Indicator */}
+                      {card.streaming && streamingCard === card.agent && (
+                        <Paper
+                          sx={{
+                            p: 2,
+                            mt: 2,
+                            bgcolor: alpha(getAgentColor(card.agent), 0.05),
+                            border: `1px solid ${alpha(getAgentColor(card.agent), 0.3)}`,
+                            borderRadius: 2,
+                            animation: "pulse 1.5s infinite",
+                            "@keyframes pulse": {
+                              "0%": { opacity: 0.6 },
+                              "50%": { opacity: 1 },
+                              "100%": { opacity: 0.6 },
+                            },
+                          }}
+                        >
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                            <Avatar
+                              sx={{
+                                bgcolor: getAgentColor(card.agent),
+                                width: 32,
+                                height: 32,
+                              }}
+                            >
+                              {card.agent === "compliance" && <AssignmentIcon sx={{ fontSize: 20 }} />}
+                              {card.agent === "approvals" && <CheckCircleIcon sx={{ fontSize: 20 }} />}
+                              {card.agent === "tower" && <SecurityIcon sx={{ fontSize: 20 }} />}
+                            </Avatar>
+                            <Box>
+                              <Typography variant="subtitle2" sx={{ color: getAgentColor(card.agent) }}>
+                                {card.agent === "compliance"
+                                  ? "Compliance Agent"
+                                  : card.agent === "approvals"
+                                    ? "Approvals Agent"
+                                    : "Tower Agent"}{" "}
+                                is responding...
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                Generating response ⚡
+                              </Typography>
+                            </Box>
                           </Box>
-                        )}
+                        </Paper>
+                      )}
+
+                      {/* Card Content (Agent-specific UI components) */}
+                      {card.content && !card.streaming && (
+                        <Box sx={{ mt: 3 }}>
+                          {card.content}
+                        </Box>
+                      )}
                     </Grid>
                   );
                 })}
