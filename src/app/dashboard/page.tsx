@@ -458,8 +458,6 @@ export default function DashboardPage() {
 
   // Add state for expanded accordions per card
   const [expandedAccordions, setExpandedAccordions] = useState<Record<string, boolean>>({});
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuAnchorRef = useRef<HTMLDivElement>(null);
   const { isLoading, isAuthenticated } = useProtectedRoute();
@@ -468,6 +466,12 @@ export default function DashboardPage() {
   const [activeConversations, setActiveConversations] = useState<
     Map<string, ActiveConversation>
   >(new Map());
+
+  // Add this state to track the current conversation
+const [currentConversation, setCurrentConversation] = useState<{
+  convId: string;
+  agentType: string;
+} | null>(null);
 
   // Refs for streaming
   const assistantStreamingRef = useRef<string>("");
@@ -502,15 +506,7 @@ export default function DashboardPage() {
     },
   ];
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [activeCards, streamingCard]);
-
-  // Load active conversations from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem("activeConversations");
     if (saved) {
@@ -525,6 +521,22 @@ export default function DashboardPage() {
           });
         });
         setActiveConversations(map);
+        
+        // Set the current conversation to the most recently used one
+        let mostRecent: { convId: string; agentType: string } | null = null;
+        let mostRecentTime = new Date(0);
+        
+        map.forEach((value, key) => {
+          if (value.lastUsed > mostRecentTime) {
+            mostRecentTime = value.lastUsed;
+            mostRecent = {
+              convId: value.convId,
+              agentType: key
+            };
+          }
+        });
+        
+        setCurrentConversation(mostRecent);
       } catch (error) {
         console.error("Error loading conversations:", error);
       }
@@ -639,135 +651,120 @@ export default function DashboardPage() {
     }
   };
 
-  // Get or create conversation for an agent
-  const getOrCreateConversation = async (
-    agentType: string,
-  ): Promise<string> => {
-    const existing = activeConversations.get(agentType);
-
-    if (existing) {
-      const age = moment().diff(moment(existing.lastUsed), "minutes");
-      if (age < 60) {
-        console.log(
-          `Reusing existing conversation ${existing.convId} for ${agentType} (age: ${age} minutes)`,
-        );
-
-        setActiveConversations((prev) => {
-          const updated = new Map(prev);
-          updated.set(agentType, {
-            ...existing,
-            lastUsed: new Date(),
-          });
-          return updated;
-        });
-
-        return existing.convId;
-      } else {
-        console.log(
-          `Conversation for ${agentType} is too old (${age} minutes), creating new one`,
-        );
-      }
-    }
-
-    const convId = await createConversation(agentType);
-
-    setActiveConversations((prev) => {
-      const updated = new Map(prev);
-      updated.set(agentType, {
-        convId,
-        createdAt: new Date(),
-        lastUsed: new Date(),
-      });
-      return updated;
-    });
-
-    return convId;
-  };
-
-  const clearAgentConversation = (agentType: string) => {
-    setActiveConversations((prev) => {
-      const updated = new Map(prev);
-      updated.delete(agentType);
-      return updated;
-    });
-  };
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+      if (!inputValue.trim()) return;
 
-    const lowerInput = inputValue.toLowerCase();
+      const lowerInput = inputValue.toLowerCase();
 
-    let mentionedAgent = agents.find((agent) =>
-      lowerInput.includes(`@${agent.name.toLowerCase()}`),
-    );
+      // Extract the mentioned agent from the prompt
+      const atMentionRegex = /@(\w+)/g;
+      const matches = [...inputValue.matchAll(atMentionRegex)];
+      
+      let mentionedAgent = null;
+      if (matches.length > 0) {
+        // Get the last mentioned agent
+        const lastMatch = matches[matches.length - 1];
+        const mentionedName = lastMatch[1];
+        mentionedAgent = agents.find(
+          agent => agent.name.toLowerCase() === mentionedName.toLowerCase()
+        );
+      }
 
-    if (!mentionedAgent) {
-      mentionedAgent = agents[0];
-    }
+      // If no agent mentioned, use the first agent as default
+      if (!mentionedAgent) {
+        mentionedAgent = agents[0];
+      }
 
-    setIsTyping(true);
+      setIsTyping(true);
 
-    try {
-      const convId = await getOrCreateConversation(mentionedAgent.name);
+      try {
+        // ALWAYS use the existing conversation if available, regardless of agent
+        let convId:any;
+        if (currentConversation) {
+          // Reuse the existing conversation even if agent changed
+          convId = currentConversation.convId;
+          console.log(`Reusing conversation ${convId} for agent ${mentionedAgent.name} (original agent: ${currentConversation.agentType})`);
+        } else {
+          // Only create a new conversation if there's no current conversation
+          convId = await createConversation(mentionedAgent.name);
+          setCurrentConversation({
+            convId,
+            agentType: mentionedAgent.name
+          });
+          
+          // Update activeConversations for persistence
+          setActiveConversations((prev) => {
+            const updated = new Map(prev);
+            updated.set(mentionedAgent.name, {
+              convId,
+              createdAt: new Date(),
+              lastUsed: new Date(),
+            });
+            return updated;
+          });
+        }
 
-      const runId = await startChat(
-        convId,
-        inputValue.replace(`@${mentionedAgent.name}`, "").trim(),
-        mentionedAgent.agentId,
-        mentionedAgent.id,
-      );
+        // Clean the prompt by removing @mentions
+        const cleanPrompt = inputValue.replace(atMentionRegex, '').trim();
 
-      const newCardId = Date.now().toString();
-      const newCard: AgentCard = {
-        id: newCardId,
-        agent: mentionedAgent.id as "compliance" | "approvals" | "tower",
-        title:
-          mentionedAgent.id === "compliance"
-            ? "Compliance Report"
-            : mentionedAgent.id === "approvals"
-              ? "Approvals Required"
-              : "Tower Overview",
-        timestamp: new Date(),
-        runId: runId,
-        streaming: true,
-        convId: convId,
-        prompt: inputValue,
-        toolResponses: [], // Initialize empty array
-      };
+        const runId = await startChat(
+          convId,
+          cleanPrompt || inputValue, // Fallback to original if cleaning removed everything
+          mentionedAgent.agentId,
+          mentionedAgent.id,
+        );
 
-      setActiveCards((prev) => [...prev, newCard]);
-      setStreamingCard(mentionedAgent.id);
+        const newCardId = Date.now().toString();
+        const newCard: AgentCard = {
+          id: newCardId,
+          agent: mentionedAgent.id as "compliance" | "approvals" | "tower",
+          title:
+            mentionedAgent.id === "compliance"
+              ? "Compliance Report"
+              : mentionedAgent.id === "approvals"
+                ? "Approvals Required"
+                : "Tower Overview",
+          timestamp: new Date(),
+          runId: runId,
+          streaming: true,
+          convId: convId,
+          prompt: inputValue, // Keep original prompt with @mention for display
+          toolResponses: [],
+        };
 
-      await handleStreamData(runId, newCardId, lowerInput, convId);
-    } catch (error) {
-      console.error("Error in conversation flow:", error);
-      const errorCard: AgentCard = {
-        id: Date.now().toString(),
-        agent: "compliance",
-        title: "Error",
-        timestamp: new Date(),
-        streamData: {
-          steps: [
-            {
-              title: "Error",
-              description:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to start conversation",
-              timestamp: moment().format("hh:mm:ss"),
-            },
-          ],
-        },
-        prompt: inputValue,
-      };
-      setActiveCards((prev) => [...prev, errorCard]);
-    } finally {
-      setIsTyping(false);
-    }
+        setActiveCards((prev) => [...prev, newCard]);
+        setStreamingCard(mentionedAgent.id);
 
-    setInputValue("");
-  };
+        await handleStreamData(runId, newCardId, lowerInput, convId);
+      } catch (error) {
+        console.error("Error in conversation flow:", error);
+        const errorCard: AgentCard = {
+          id: Date.now().toString(),
+          agent: "compliance",
+          title: "Error",
+          timestamp: new Date(),
+          streamData: {
+            steps: [
+              {
+                title: "Error",
+                description:
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to start conversation",
+                timestamp: moment().format("hh:mm:ss"),
+              },
+            ],
+          },
+          prompt: inputValue,
+        };
+        setActiveCards((prev) => [...prev, errorCard]);
+      } finally {
+        setIsTyping(false);
+      }
 
+      setInputValue("");
+    };
   const handleStreamData = async (
     runId: string,
     cardId: string,
@@ -1970,11 +1967,31 @@ export default function DashboardPage() {
 
   const handleAgentSelect = (agent: Agent) => {
     const lastAtSymbol = inputValue.lastIndexOf("@", cursorPosition - 1);
-    const newValue =
-      inputValue.substring(0, lastAtSymbol) +
-      `@${agent.name} ` +
-      inputValue.substring(cursorPosition);
-
+    
+    // Find if there's already an @mention in the input
+    const atMentionRegex = /@(\w+)/g;
+    const matches = [...inputValue.matchAll(atMentionRegex)];
+    
+    let newValue;
+    if (matches.length > 0) {
+      // Replace the last @mention with the new agent
+      const lastMatch = matches[matches.length - 1];
+      if (lastMatch.index !== undefined) {
+        newValue = 
+          inputValue.substring(0, lastMatch.index) +
+          `@${agent.name} ` +
+          inputValue.substring(lastMatch.index + lastMatch[0].length);
+      } else {
+        newValue = inputValue + ` @${agent.name} `;
+      }
+    } else {
+      // No existing @mention, add new one at cursor position
+      newValue =
+        inputValue.substring(0, lastAtSymbol) +
+        `@${agent.name} ` +
+        inputValue.substring(cursorPosition);
+    }
+    
     setInputValue(newValue);
     setShowAgentMenu(false);
     inputRef.current?.focus();
@@ -1987,16 +2004,17 @@ export default function DashboardPage() {
     }
   };
 
-  const clearChat = () => {
+  const handleCreateAgentConversation = () => {
+    // Clear current conversation
+    setCurrentConversation(null);
+    // Clear all cards
     setActiveCards([]);
+    // Clear active conversations from state
     setActiveConversations(new Map());
+    // Clear from localStorage
     localStorage.removeItem("activeConversations");
   };
 
-  const handleClearAgentConversation = (agentName: string) => {
-    clearAgentConversation(agentName);
-    console.log(`Cleared conversation for ${agentName}`);
-  };
 
   const handleAgentClick = (agent: string) => {
     setInputValue((prev) => prev + `@${agent} `);
@@ -2022,12 +2040,16 @@ export default function DashboardPage() {
         overflow: "hidden",
       }}
     >
+
+      {/* Main Content Area - Scrollable */}
       <Box
         sx={{
           flex: 1,
           overflow: "auto",
           px: 2,
           py: 2,
+          // Add padding at bottom to account for sticky input
+          pb: 2,
         }}
       >
         <Container maxWidth="xl">
@@ -2059,7 +2081,7 @@ export default function DashboardPage() {
                       {/* Streaming Steps Accordion */}
                       {renderStreamSteps(card)}
 
-                      {/* Streaming Tool Responses - Show as they arrive */}
+                      {/* Streaming Tool Responses */}
                       {card.toolResponses && card.toolResponses.length > 0 && card.streaming && (
                         <Box sx={{ mt: 3 }}>
                           <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'warning.main' }}>
@@ -2089,7 +2111,7 @@ export default function DashboardPage() {
                         </Box>
                       )}
 
-                      {/* Final Response - Show when streaming is complete */}
+                      {/* Final Response */}
                       {card.finalResponse && !card.streaming && (
                         <Box sx={{ mt: 3 }}>
                           <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
@@ -2099,7 +2121,7 @@ export default function DashboardPage() {
                         </Box>
                       )}
 
-                      {/* All Tool Responses (when not streaming) - Show all accumulated responses */}
+                      {/* All Tool Responses */}
                       {card.toolResponses && card.toolResponses.length > 0 && !card.streaming && !card.finalResponse && (
                         <Box sx={{ mt: 3 }}>
                           <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
@@ -2202,12 +2224,10 @@ export default function DashboardPage() {
               </Typography>
             </Paper>
           )}
-
-          <div ref={messagesEndRef} />
         </Container>
       </Box>
 
-      {/* Chat Input Section */}
+      {/* Chat Input Section - Sticky at bottom */}
       <Paper
         elevation={3}
         sx={{
@@ -2216,7 +2236,11 @@ export default function DashboardPage() {
           bgcolor: "background.paper",
           position: "sticky",
           bottom: 0,
+          left: 0,
+          right: 0,
           zIndex: 1100,
+          // Add shadow to separate from content
+          boxShadow: '0px -4px 10px rgba(0, 0, 0, 0.05)',
         }}
         ref={menuAnchorRef}
       >
@@ -2230,27 +2254,44 @@ export default function DashboardPage() {
                 alignItems: "center",
               }}
             >
-              {agents.map((agent) => (
-                <Chip
-                  key={agent.id}
-                  icon={agent.icon}
-                  label={`@${agent.name}`}
-                  onClick={() => handleAgentClick(agent.name)}
-                  sx={{
-                    bgcolor: activeConversations.has(agent.name)
-                      ? alpha(agent.color, 0.2)
-                      : alpha(agent.color, 0.1),
-                    color: agent.color,
-                    borderColor: agent.color,
-                    "&:hover": {
-                      bgcolor: alpha(agent.color, 0.3),
-                    },
-                  }}
-                  variant="outlined"
-                  size="small"
-                />
-              ))}
+              {agents.map((agent) => {
+                // Check if this agent is mentioned in the current input
+                const isMentioned = inputValue.includes(`@${agent.name}`);
+                
+                return (
+                  <Chip
+                    key={agent.id}
+                    icon={agent.icon}
+                    label={`@${agent.name}`}
+                    onClick={() => handleAgentClick(agent.name)}
+                    sx={{
+                      bgcolor: isMentioned 
+                        ? agent.color // Full color when mentioned
+                        : activeConversations.has(agent.name)
+                          ? alpha(agent.color, 0.2)
+                          : alpha(agent.color, 0.1),
+                      color: isMentioned ? 'white' : agent.color,
+                      borderColor: agent.color,
+                      fontWeight: isMentioned ? 600 : 400,
+                      '&:hover': {
+                        bgcolor: isMentioned 
+                          ? agent.color 
+                          : alpha(agent.color, 0.3),
+                      },
+                    }}
+                    variant={isMentioned ? "filled" : "outlined"}
+                    size="small"
+                  />
+                );
+              })}
             </Box>
+
+            {/* Active conversation indicator */}
+            {currentConversation && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                Active conversation: @{currentConversation.agentType} (will be reused for all agents)
+              </Typography>
+            )}
 
             <Box sx={{ position: "relative" }}>
               <Box sx={{ display: "flex", gap: 1 }}>
@@ -2289,7 +2330,24 @@ export default function DashboardPage() {
                   Send
                 </Button>
               </Box>
+              
+              {/* New Conversation Button */}
+              <Box sx={{ mt: 1 }}>
+                <Button 
+                  variant="contained" 
+                  onClick={handleCreateAgentConversation} 
+                  sx={{
+                    bgcolor: theme.palette.secondary.main,
+                    '&:hover': {
+                      bgcolor: theme.palette.secondary.dark,
+                    }
+                  }}
+                >
+                  Start New Conversation
+                </Button>
+              </Box>
 
+              {/* Agent Menu Popper */}
               {showAgentMenu && filteredAgents.length > 0 && (
                 <Popper
                   open={showAgentMenu}
