@@ -850,8 +850,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                       const thoughtContent =
                         typeof data === "string" ? data : data?.content;
 
-                      setActiveCards((prev) =>
-                        prev.map((card) => {
+                      setActiveCards((prev:any) =>
+                        prev.map((card:any) => {
                           if (card.id === cardId) {
                             const updatedStreamData = { ...card.streamData };
                             if (!updatedStreamData.steps) {
@@ -945,8 +945,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                           });
                         }
 
-                        setActiveCards((prev) =>
-                          prev.map((card) => {
+                        setActiveCards((prev:any) =>
+                          prev.map((card:any) => {
                             if (card.id === cardId) {
                               const updatedStreamData = { ...card.streamData };
                               if (!updatedStreamData.steps) {
@@ -1093,8 +1093,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                           });
                         }
 
-                        setActiveCards((prev) =>
-                          prev.map((card) => {
+                        setActiveCards((prev:any) =>
+                          prev.map((card:any) => {
                             if (card.id === cardId) {
                               const updatedStreamData = { ...card.streamData };
 
@@ -1171,8 +1171,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                       const agentId = mentionedAgent?.id || "compliance";
                       
                       if (agentId === "tower") {
-                        setActiveCards((prev) =>
-                          prev.map((card) => {
+                        setActiveCards((prev:any) =>
+                          prev.map((card:any) => {
                             if (card.id === cardId) {
                               const updatedCard = {
                                 ...card,
@@ -1365,8 +1365,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                         };
                       }
 
-                      setActiveCards((prev) =>
-                        prev.map((card) => {
+                      setActiveCards((prev:any) =>
+                        prev.map((card:any) => {
                           if (card.id === cardId) {
                             const updatedCard = {
                               ...card,
@@ -1454,8 +1454,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                     }
 
                     if (node_status === "<START>") {
-                      setActiveCards((prev) =>
-                        prev.map((card) => {
+                      setActiveCards((prev:any) =>
+                        prev.map((card:any) => {
                           if (card.id === cardId) {
                             const updatedStreamData = { ...card.streamData };
                             if (!updatedStreamData.steps)
@@ -1481,8 +1481,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                         }),
                       );
                     } else if (node_status === "<END>") {
-                      setActiveCards((prev) =>
-                        prev.map((card) => {
+                      setActiveCards((prev:any) =>
+                        prev.map((card:any) => {
                           if (card.id === cardId) {
                             const updatedStreamData = { ...card.streamData };
                             const steps = updatedStreamData.steps || [];
@@ -1520,8 +1520,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                       const workflowAgentId = workflowMentionedAgent?.id || "compliance";
 
                       if (workflowAgentId === "tower") {
-                        setActiveCards((prev) =>
-                          prev.map((card) => {
+                        setActiveCards((prev:any) =>
+                          prev.map((card:any) => {
                             if (card.id === cardId) {
                               const updatedCard = {
                                 ...card,
@@ -1667,8 +1667,8 @@ const [currentConversation, setCurrentConversation] = useState<{
                         };
                       }
 
-                      setActiveCards((prev) =>
-                        prev.map((card) => {
+                      setActiveCards((prev:any) =>
+                        prev.map((card:any) => {
                           if (card.id === cardId) {
                             const updatedCard = {
                               ...card,
@@ -2058,7 +2058,7 @@ const [currentConversation, setCurrentConversation] = useState<{
               <Grid container spacing={3}>
                 {activeCards.map((card) => {                  
                   return (
-                    <Grid item xs={12} key={card.id}>
+                    <Grid size={{ xs: 12 }} key={card.id}>
                       {/* Prompt Message Section */}
                       {card.prompt && (
                         <Paper sx={{ mb: 3, p: 2 }}>                           
@@ -2261,7 +2261,7 @@ const [currentConversation, setCurrentConversation] = useState<{
                 return (
                   <Chip
                     key={agent.id}
-                    icon={agent.icon}
+                    avatar={<Avatar sx={{ bgcolor: agent.color, width: 24, height: 24 }}>{agent.icon}</Avatar>}
                     label={`@${agent.name}`}
                     onClick={() => handleAgentClick(agent.name)}
                     sx={{

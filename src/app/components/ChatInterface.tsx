@@ -331,7 +331,7 @@ function TowerResponse() {
           Red Sites: 2
         </Typography>
         <Grid container spacing={1}>
-          <Grid item xs={6}>
+          <Grid size={{ xs: 6 }}>
             <Card variant="outlined" sx={{ borderColor: theme.palette.error.main }}>
               <CardContent sx={{ p: 1 }}>
                 <Typography variant="caption" color="error" fontWeight={600}>🔴 Site A</Typography>
@@ -340,7 +340,7 @@ function TowerResponse() {
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={6}>
+           <Grid size={{ xs: 6 }}>
             <Card variant="outlined" sx={{ borderColor: theme.palette.error.main }}>
               <CardContent sx={{ p: 1 }}>
                 <Typography variant="caption" color="error" fontWeight={600}>🔴 Site D</Typography>

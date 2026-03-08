@@ -35,13 +35,14 @@ import {
   Warning as WarningIcon,
   Menu as MenuIcon,
 } from '@mui/icons-material';
+
 // Tower Cards Component
 export default function ApprovalsCards() {
   const theme = useTheme();
 
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={6}>
+      <Grid size={{ xs: 12, md: 6 }}>
         <Card sx={{ bgcolor: alpha(theme.palette.success.main, 0.05) }}>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontSize: '1rem', fontWeight: 600, color: theme.palette.success.main }}>
@@ -75,7 +76,7 @@ export default function ApprovalsCards() {
         </Card>
       </Grid>
 
-      <Grid item xs={12} md={6}>
+      <Grid size={{ xs: 12, md: 6 }}>
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontSize: '1rem', fontWeight: 600 }}>

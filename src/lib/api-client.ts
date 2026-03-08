@@ -1,6 +1,8 @@
 import axios from 'axios';
+import { env } from 'next-runtime-env';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL = env('NEXT_PUBLIC_API_URL');
+
 
 if (!API_BASE_URL) {
   console.warn('NEXT_PUBLIC_API_URL is not defined, using default URL');

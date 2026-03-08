@@ -32,7 +32,7 @@ export default function TowerCards() {
   return (
     <Grid container spacing={3}>
       {/* Tower Overview */}
-      <Grid item xs={12} md={6}>
+      <Grid size={{ xs: 12, md: 6 }}>
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontSize: '1rem', fontWeight: 600 }}>
@@ -51,7 +51,7 @@ export default function TowerCards() {
             </Box>
             
             <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <Card variant="outlined" sx={{ borderColor: theme.palette.error.main }}>
                   <CardContent>
                     <Typography variant="subtitle2" color="error" gutterBottom>🔴 Site A</Typography>
@@ -61,7 +61,7 @@ export default function TowerCards() {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12} md={6}>
+             <Grid size={{ xs: 12, md: 6 }}>
                 <Card variant="outlined" sx={{ borderColor: theme.palette.error.main }}>
                   <CardContent>
                     <Typography variant="subtitle2" color="error" gutterBottom>🔴 Site D</Typography>
@@ -75,7 +75,7 @@ export default function TowerCards() {
       </Grid>
 
       {/* Red Sites Summary */}
-      <Grid item xs={12} md={6}>
+      <Grid size={{ xs: 12, md: 6 }}>
         <Card sx={{ bgcolor: alpha(theme.palette.error.main, 0.05) }}>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontSize: '1rem', fontWeight: 600, color: theme.palette.error.main }}>

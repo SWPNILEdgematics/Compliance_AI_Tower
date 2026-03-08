@@ -42,7 +42,7 @@ export default function ComplianceReportCards() {
   return (
     <Grid container spacing={3}>
       {/* Audit Checklist */}
-      <Grid item xs={12} md={4}>
+      <Grid size={{ xs: 12, md: 4 }}>
         <Card sx={{ height: '100%' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontSize: '1rem', fontWeight: 600 }}>
@@ -85,7 +85,7 @@ export default function ComplianceReportCards() {
       </Grid>
 
       {/* Evidence Pack Index */}
-      <Grid item xs={12} md={4}>
+      <Grid size={{ xs: 12, md: 4 }}>
         <Card sx={{ height: '100%' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontSize: '1rem', fontWeight: 600 }}>
@@ -119,7 +119,7 @@ export default function ComplianceReportCards() {
       </Grid>
 
       {/* Draft Compliance Report */}
-      <Grid item xs={12} md={4}>
+      <Grid size={{ xs: 12, md: 4 }}>
         <Card sx={{ height: '100%' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontSize: '1rem', fontWeight: 600 }}>

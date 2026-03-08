@@ -42,21 +42,21 @@ export default function PolicyViolationsPage() {
       <Container maxWidth="xl" sx={{ py: 4 }}>
         {/* Summary Cards */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} md={4}>
+            <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 3, textAlign: 'center', bgcolor: alpha(theme.palette.error.main, 0.1) }}>
               <ErrorIcon sx={{ fontSize: 40, color: theme.palette.error.main, mb: 1 }} />
               <Typography variant="h4" sx={{ color: theme.palette.error.main, fontWeight: 600 }}>2</Typography>
               <Typography variant="body2" color="text.secondary">Critical Violations</Typography>
             </Paper>
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 3, textAlign: 'center', bgcolor: alpha(theme.palette.warning.main, 0.1) }}>
               <WarningIcon sx={{ fontSize: 40, color: theme.palette.warning.main, mb: 1 }} />
               <Typography variant="h4" sx={{ color: theme.palette.warning.main, fontWeight: 600 }}>5</Typography>
               <Typography variant="body2" color="text.secondary">Medium Violations</Typography>
             </Paper>
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 3, textAlign: 'center', bgcolor: alpha(theme.palette.info.main, 0.1) }}>
               <PriorityHighIcon sx={{ fontSize: 40, color: theme.palette.info.main, mb: 1 }} />
               <Typography variant="h4" sx={{ color: theme.palette.info.main, fontWeight: 600 }}>8</Typography>
@@ -71,7 +71,7 @@ export default function PolicyViolationsPage() {
 
         <Grid container spacing={3}>
           {/* Security Alert Card */}
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <Card sx={{ 
               border: `1px solid ${alpha(theme.palette.error.main, 0.3)}`,
               bgcolor: alpha(theme.palette.error.main, 0.05),
@@ -95,23 +95,23 @@ export default function PolicyViolationsPage() {
                 </Box>
                 
                 <Grid container spacing={3}>
-                  <Grid item xs={12} md={8}>
+                    <Grid size={{ xs: 12, md: 8 }}>
                     <Paper sx={{ p: 2, bgcolor: 'background.paper' }}>
                       <Typography variant="subtitle2" gutterBottom>Incident Details</Typography>
                       <Grid container spacing={2}>
-                        <Grid item xs={6} md={3}>
+                        <Grid size={{ xs: 6, md: 3 }}>
                           <Typography variant="body2" color="text.secondary">Device</Typography>
                           <Typography variant="body1" fontWeight={600}>LAP 1042</Typography>
                         </Grid>
-                        <Grid item xs={6} md={3}>
+                        <Grid size={{ xs: 6, md: 3 }}>
                           <Typography variant="body2" color="text.secondary">User</Typography>
                           <Typography variant="body1" fontWeight={600}>j*****</Typography>
                         </Grid>
-                        <Grid item xs={6} md={3}>
+                        <Grid size={{ xs: 6, md: 3 }}>
                           <Typography variant="body2" color="text.secondary">Site</Typography>
                           <Typography variant="body1" fontWeight={600}>Houston</Typography>
                         </Grid>
-                        <Grid item xs={6} md={3}>
+                        <Grid size={{ xs: 6, md: 3 }}>
                           <Typography variant="body2" color="text.secondary">Detected</Typography>
                           <Typography variant="body1" fontWeight={600}>10:14 AM</Typography>
                         </Grid>
@@ -125,7 +125,7 @@ export default function PolicyViolationsPage() {
                     </Paper>
                   </Grid>
                   
-                  <Grid item xs={12} md={4}>
+                  <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, bgcolor: 'background.paper', height: '100%' }}>
                       <Typography variant="subtitle2" gutterBottom>Actions Required</Typography>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
@@ -147,7 +147,8 @@ export default function PolicyViolationsPage() {
           </Grid>
 
           {/* Tanium Patch Compliance Card */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
@@ -183,7 +184,7 @@ export default function PolicyViolationsPage() {
           </Grid>
 
           {/* Data Privacy Violation Card */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
@@ -205,19 +206,19 @@ export default function PolicyViolationsPage() {
                 </Typography>
                 
                 <Grid container spacing={2} sx={{ mt: 1 }}>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">User</Typography>
                     <Typography variant="body2" fontWeight={600}>john.doe@company.com</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">Resource</Typography>
                     <Typography variant="body2" fontWeight={600}>Customer DB</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">Time</Typography>
                     <Typography variant="body2" fontWeight={600}>09:45 AM</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">Status</Typography>
                     <Typography variant="body2" fontWeight={600} color="error">Blocked</Typography>
                   </Grid>
@@ -232,7 +233,7 @@ export default function PolicyViolationsPage() {
           </Grid>
 
           {/* Access Policy Violation Card */}
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -256,7 +257,7 @@ export default function PolicyViolationsPage() {
           </Grid>
 
           {/* Firewall Policy Violation Card */}
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -280,7 +281,7 @@ export default function PolicyViolationsPage() {
           </Grid>
 
           {/* Password Policy Violation Card */}
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
