@@ -14,9 +14,9 @@ import {
   CheckCircle as CheckCircleIcon,
   Security as SecurityIcon,
 } from "@mui/icons-material";
-import { AgentCard } from "@/hooks/useConversation";
-import StreamSteps from "./StreamSteps";
-import ToolResponseRenderer from "./ToolResponseRenderer";
+import AgentCard from "../../hooks/useConversation";
+import StreamSteps from "../components/StreamSteps";
+import ToolResponseRenderer from "../components/ToolResponseRenderer";
 
 interface AgentMessageProps {
   card: AgentCard;
@@ -44,6 +44,13 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
     }
   };
 
+  // Determine if we should show streaming indicator
+  const showStreamingIndicator = card.streaming && streamingCard === card.agent;
+
+  // Check if there are any streaming responses (toolResponses or finalResponses during streaming)
+  const hasStreamingResponses = (card.toolResponses && card.toolResponses.length > 0) || 
+                                (card.finalResponses && card.finalResponses.length > 0);
+
   return (
     <Box>
       {/* Prompt Message */}
@@ -66,14 +73,14 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
       {/* Stream Steps */}
       <StreamSteps card={card} />
 
-      {/* Streaming Tool Responses */}
-      {card.toolResponses && card.toolResponses.length > 0 && card.streaming && (
+      {/* Tool Responses */}
+      {card.toolResponses && card.toolResponses.length > 0 && (
         <Box sx={{ mt: 3 }}>
           <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'warning.main' }}>
-            Streaming Responses ({card.toolResponses.length})
+            Tool Responses {showStreamingIndicator ? '(Streaming)' : ''} ({card.toolResponses.length})
           </Typography>
           {card.toolResponses.map((response, index) => (
-            <Box key={index} sx={{ mb: 3 }}>
+            <Box key={`tool-${index}`} sx={{ mb: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                 <Chip 
                   size="small" 
@@ -96,8 +103,27 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
         </Box>
       )}
 
-      {/* Final Response */}
-      {card.finalResponse && !card.streaming && (
+      {/* Final Responses */}
+      {card.finalResponses && card.finalResponses.length > 0 && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
+            {showStreamingIndicator ? 'Streaming Responses' : 'Final Results'} ({card.finalResponses.length})
+          </Typography>
+          {card.finalResponses.map((response, index) => (
+            <Box key={`final-${index}`} sx={{ mb: 3 }}>
+              {response.timestamp && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  {response.timestamp}
+                </Typography>
+              )}
+              <ToolResponseRenderer data={response} />
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Keep backward compatibility for single finalResponse */}
+      {!card.finalResponses && card.finalResponse && !showStreamingIndicator && (
         <Box sx={{ mt: 3 }}>
           <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
             Final Result
@@ -106,8 +132,8 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
         </Box>
       )}
 
-      {/* Streaming Indicator */}
-      {card.streaming && streamingCard === card.agent && (
+      {/* Streaming Indicator - Only show if actively streaming AND no responses yet */}
+      {showStreamingIndicator && !hasStreamingResponses && (
         <Paper
           sx={{
             p: 2,
@@ -116,6 +142,11 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
             border: `1px solid ${alpha(getAgentColor(card.agent), 0.3)}`,
             borderRadius: 2,
             animation: "pulse 1.5s infinite",
+            "@keyframes pulse": {
+              "0%": { opacity: 0.6 },
+              "50%": { opacity: 1 },
+              "100%": { opacity: 0.6 },
+            },
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -125,10 +156,10 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
             <Box>
               <Typography variant="subtitle2" sx={{ color: getAgentColor(card.agent) }}>
                 {card.agent === "compliance" ? "Compliance Agent" :
-                 card.agent === "approvals" ? "Approvals Agent" : "Tower Agent"} is responding...
+                 card.agent === "approvals" ? "Approvals Agent" : "Tower Agent"} is thinking...
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Generating response ⚡
+                Preparing response ⚡
               </Typography>
             </Box>
           </Box>

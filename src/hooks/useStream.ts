@@ -195,7 +195,7 @@ export const useStream = () => {
       },
       onclose: () => {
         console.log("Stream connection closed for runId:", runId);
-        activeStreamControllers.current.delete(runId);
+        activeStreamControllers.current.delete(runId);        
         onClose();
       },
     });

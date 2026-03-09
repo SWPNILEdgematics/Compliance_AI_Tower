@@ -1,7 +1,8 @@
 // hooks/useConversation.ts
 import { useState, useEffect, useCallback } from 'react';
 import moment from 'moment';
-
+import { ToolResponseData } from './useStream';
+import ComplianceReportCards from '../app/components/ComplianceReportCards';
 export interface Agent {
   id: string;
   name: string;
@@ -18,13 +19,12 @@ export interface AgentCard {
   timestamp: Date;
   runId?: string;
   convId?: string;
-  streamData?: any;
-  agentStreamData?: any;
+  streamData?: any;           // For streaming steps
+  agentStreamData?: any;  // For agent thought and tool actions
   streaming?: boolean;
-  content?: React.ReactNode;
   prompt?: string;
-  toolResponses?: any[];
-  finalResponse?: any;
+  toolResponses?: ToolResponseData[];      // Array of streaming tool responses
+  finalResponses?: ToolResponseData[];     // Array to store multiple END_RESPONSE events
 }
 
 interface ActiveConversation {
@@ -188,7 +188,7 @@ export const useConversation = (agents: Agent[]) => {
         prompt: inputValue,
         toolResponses: [],
       };
-
+      console.log("Adding new card:", newCard);
       setActiveCards(prev => [...prev, newCard]);
       setStreamingCard(mentionedAgent.id);
 
@@ -240,10 +240,10 @@ export const useConversation = (agents: Agent[]) => {
     activeCards,
     setActiveCards,
     isTyping,
+    setIsTyping, // Make sure this is exported
     streamingCard,
     setStreamingCard,
-    currentConversation,
     sendMessage,
     clearConversation,
-  };
+    };
 };

@@ -64,7 +64,7 @@ const StreamSteps: React.FC<StreamStepsProps> = ({ card }) => {
         </Box>
       </AccordionSummary>
       <AccordionDetails>
-        {steps.map((step:any, index) => (
+        {steps.map((step:any, index:number) => (
           <Box key={index}>
             {index > 0 && <Divider sx={{ my: 1.5 }} />}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>

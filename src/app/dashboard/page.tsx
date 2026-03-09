@@ -1,7 +1,7 @@
-// app/dashboard/page.tsx (simplified version)
+// app/dashboard/page.tsx (fixed version)
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Box,
   Container,
@@ -34,6 +34,7 @@ import { useStream } from "@/hooks/useStream";
 import { useStreamHandler } from "@/hooks/useStreamHandler";
 import AgentMessage from "../components/AgentMessage";
 import { agents } from "../config/agents";
+import moment from "moment";
 
 export default function DashboardPage() {
   const theme = useTheme();
@@ -51,20 +52,26 @@ export default function DashboardPage() {
     activeCards,
     setActiveCards,
     isTyping,
+    setIsTyping, // Make sure this is exported from useConversation
     streamingCard,
     setStreamingCard,
     sendMessage,
     clearConversation,
   } = useConversation(agents);
 
-  const { connectToStream, abortAllStreams } = useStream();
+  const { connectToStream, abortAllStreams, parseToolResponse } = useStream();
   
   const {
     handleAgentThought,
     handleToolCall,
     handleToolResult,
     handleEndResponse,
-  } = useStreamHandler(setActiveCards, setStreamingCard, () => {});
+  } = useStreamHandler(
+    setActiveCards,
+    setStreamingCard,
+    setIsTyping,
+    parseToolResponse
+  );
 
   // Clean up streams on unmount
   useEffect(() => {
@@ -88,7 +95,7 @@ export default function DashboardPage() {
         accessToken,
         (message) => handleStreamMessage(message, cardId, mentionedAgent.id),
         (error) => handleStreamError(error, cardId),
-        () => handleStreamClose(cardId)
+        () => handleStreamClose(cardId, mentionedAgent.id) // Pass agentId
       );
     } catch (error) {
       console.error("Error sending message:", error);
@@ -97,33 +104,51 @@ export default function DashboardPage() {
     setInputValue("");
   };
 
-  const handleStreamMessage = (message: any, cardId: string, agentId: string) => {
+  const handleStreamMessage = useCallback((message: any, cardId: string, agentId: string) => {
     const { step, data, status, run_type } = message;
-
+    let finalResponseData = data.content?.response || data.content || data; // Try different paths to get the actual response content
+    console.log("Extracted final response data:", finalResponseData);
     switch (run_type) {
       case "<AGENT>":
         switch (status) {
           case "<INPROGRESS>":
-            if (step === "AGENTTHOUGHT") {
-              handleAgentThought(cardId, typeof data === "string" ? data : data?.content);
-            } else if (step === "TOOLCALL") {
+            if (step === "AGENTTHOUGHT" && data) {
+              const thoughtContent = typeof data === "string" ? data : data?.content;
+              if (thoughtContent) {
+                handleAgentThought(cardId, thoughtContent);
+              }
+            } else if (step === "TOOLCALL" && data) {
               handleToolCall(cardId, data);
-            } else if (step === "TOOLCALLRESULT") {
+            } else if (step === "TOOLCALLRESULT" && data) {
               handleToolResult(cardId, data);
             }
             break;
 
           case "<END_RESPONSE>":
-            handleEndResponse(cardId, data, agentId, () => {});
+            if (data) {
+               handleEndResponse(cardId, finalResponseData, agentId, () => {}, false);
+            }
+            break;
+            
+          case "<ERROR>":
+            console.error("Agent error:", message.error);
+            handleStreamError(message.error, cardId);
             break;
         }
         break;
-
-      // Add other run_type handlers as needed
+        
+      case "<WORKFLOW>":
+      case "<CUSTOM_WORKFLOW>":
+        // Handle workflow messages if needed
+        console.log("Workflow message:", message);
+        break;
+        
+      default:
+        console.log("Unknown message type:", run_type);
     }
-  };
+  }, [handleAgentThought, handleToolCall, handleToolResult, handleEndResponse]);
 
-  const handleStreamError = (error: any, cardId: string) => {
+  const handleStreamError = useCallback((error: any, cardId: string) => {
     console.error("Stream error:", error);
     setActiveCards((prev) =>
       prev.map((card) =>
@@ -131,11 +156,14 @@ export default function DashboardPage() {
       )
     );
     setStreamingCard(null);
-  };
+    setIsTyping(false);
+  }, [setActiveCards, setStreamingCard, setIsTyping]);
 
-  const handleStreamClose = (cardId: string) => {
+  const handleStreamClose = useCallback((cardId: string, agentId: string) => {
     console.log("Stream closed for card:", cardId);
-  };
+    // Call handleEndResponse with isStreamClosed=true to finalize
+    handleEndResponse(cardId, null, agentId, () => {}, true);
+  }, [handleEndResponse]);
 
   // Input handlers
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -146,8 +174,13 @@ export default function DashboardPage() {
 
     // Show agent menu when @ is typed
     const lastAtSymbol = value.lastIndexOf("@", position - 1);
-    if (lastAtSymbol !== -1 && !value.slice(lastAtSymbol + 1, position).includes(" ")) {
-      setShowAgentMenu(true);
+    if (lastAtSymbol !== -1) {
+      const textAfterAt = value.slice(lastAtSymbol + 1, position);
+      if (!textAfterAt.includes(" ")) {
+        setShowAgentMenu(true);
+      } else {
+        setShowAgentMenu(false);
+      }
     } else {
       setShowAgentMenu(false);
     }
@@ -155,12 +188,17 @@ export default function DashboardPage() {
 
   const handleAgentSelect = (agent: Agent) => {
     const lastAtSymbol = inputValue.lastIndexOf("@", cursorPosition - 1);
-    const newValue =
-      inputValue.substring(0, lastAtSymbol) +
-      `@${agent.name} ` +
-      inputValue.substring(cursorPosition);
     
-    setInputValue(newValue);
+    if (lastAtSymbol !== -1) {
+      const newValue =
+        inputValue.substring(0, lastAtSymbol) +
+        `@${agent.name} ` +
+        inputValue.substring(cursorPosition);
+      setInputValue(newValue);
+    } else {
+      setInputValue(inputValue + ` @${agent.name} `);
+    }
+    
     setShowAgentMenu(false);
     inputRef.current?.focus();
   };
@@ -179,6 +217,11 @@ export default function DashboardPage() {
     return agent.name.toLowerCase().includes(searchText);
   });
 
+  const getAgentColor = (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    return agent?.color || theme.palette.primary.main;
+  };
+
   if (isLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
@@ -190,11 +233,33 @@ export default function DashboardPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", bgcolor: theme.palette.background.default }}>
-      {/* Main Content */}
+    <Box sx={{ 
+      height: "100vh", 
+      display: "flex", 
+      flexDirection: "column", 
+      bgcolor: theme.palette.background.default,
+      overflow: "hidden",
+    }}>
+      {/* Main Content - Scrollable Area */}
       <Box sx={{ flex: 1, overflow: "auto", px: 2, py: 2 }}>
         <Container maxWidth="xl">
-          {activeCards.length > 0 && (
+          {activeCards.length === 0 ? (
+            <Box sx={{ 
+              display: "flex", 
+              justifyContent: "center", 
+              alignItems: "center", 
+              height: "50vh",
+              flexDirection: "column",
+              gap: 2,
+            }}>
+              <Typography variant="h5" color="text.secondary">
+                Welcome to AI Agent Dashboard
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                Type @ to mention an agent and start a conversation
+              </Typography>
+            </Box>
+          ) : (
             <Grid container spacing={3}>
               {activeCards.map((card) => (
                 <Grid size={{ xs: 12 }} key={card.id}>
@@ -203,10 +268,18 @@ export default function DashboardPage() {
               ))}
             </Grid>
           )}
+          
+          {isTyping && !streamingCard && (
+            <Paper sx={{ p: 2, mt: 2, bgcolor: alpha(theme.palette.primary.main, 0.05), maxWidth: 200 }}>
+              <Typography variant="body2" color="text.secondary">
+               Agent AI Assistant is thinking...
+              </Typography>
+            </Paper>
+          )}
         </Container>
       </Box>
 
-      {/* Input Section */}
+      {/* Input Section - Sticky at Bottom */}
       <Paper
         elevation={3}
         sx={{
@@ -220,44 +293,105 @@ export default function DashboardPage() {
         ref={menuAnchorRef}
       >
         <Container maxWidth="xl">
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <TextField
-              fullWidth
-              placeholder="Type @ to mention an agent..."
-              value={inputValue}
-              onChange={handleInputChange}
-              onKeyPress={handleKeyPress}
-              variant="outlined"
-              size="small"
-              inputRef={inputRef}
-            />
-            <Button
-              variant="contained"
-              onClick={handleSendMessage}
-              disabled={!inputValue.trim()}
-            >
-              Send
-            </Button>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+            {/* Agent Chips */}
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              {agents.map((agent) => (
+                <Button
+                  key={agent.id}
+                  size="small"
+                  variant="outlined"
+                  startIcon={agent.icon}
+                  onClick={() => setInputValue(prev => prev + `@${agent.name} `)}
+                  sx={{
+                    borderColor: agent.color,
+                    color: agent.color,
+                    '&:hover': {
+                      borderColor: agent.color,
+                      bgcolor: alpha(agent.color, 0.1),
+                    }
+                  }}
+                >
+                  @{agent.name}
+                </Button>
+              ))}
+            </Box>
+
+            {/* Input Row */}
+            <Box sx={{ position: "relative", display: "flex", gap: 1 }}>
+              <TextField
+                fullWidth
+                placeholder="Type @ to mention an agent..."
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyPress={handleKeyPress}
+                variant="outlined"
+                size="small"
+                inputRef={inputRef}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                    bgcolor: alpha(theme.palette.background.default, 0.5),
+                  },
+                }}
+              />
+              <Button
+                variant="contained"
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim()}
+                sx={{
+                  bgcolor: theme.palette.primary.main,
+                  color: "white",
+                  px: 4,
+                  "&:hover": { bgcolor: theme.palette.primary.dark },
+                  "&.Mui-disabled": { bgcolor: alpha(theme.palette.primary.main, 0.3) },
+                }}
+              >
+                Send
+              </Button>
+            </Box>
+
+            {/* New Conversation Button */}
+            <Box sx={{ display: "flex", justifyContent: "flex-start" }}>
+              <Button 
+                variant="contained" 
+                color="secondary" 
+                onClick={clearConversation}
+                size="small"
+              >
+                Start New Conversation
+              </Button>
+            </Box>
           </Box>
 
-          <Box sx={{ mt: 1 }}>
-            <Button variant="contained" color="secondary" onClick={clearConversation}>
-              Start New Conversation
-            </Button>
-          </Box>
-
-          {/* Agent Menu */}
+          {/* Agent Menu Popper */}
           {showAgentMenu && filteredAgents.length > 0 && (
-            <Popper open={showAgentMenu} anchorEl={menuAnchorRef.current} placement="top-start" transition>
+            <Popper
+              open={showAgentMenu}
+              anchorEl={menuAnchorRef.current}
+              placement="top-start"
+              transition
+              sx={{ zIndex: 1300, width: 300 }}
+            >
               {({ TransitionProps }) => (
-                <Fade {...TransitionProps}>
+                <Fade {...TransitionProps} timeout={350}>
                   <Paper elevation={4}>
                     <ClickAwayListener onClickAway={() => setShowAgentMenu(false)}>
                       <MenuList>
                         {filteredAgents.map((agent) => (
-                          <MenuItem key={agent.id} onClick={() => handleAgentSelect(agent)}>
-                            <ListItemIcon sx={{ color: agent.color }}>{agent.icon}</ListItemIcon>
-                            <ListItemText primary={`@${agent.name}`} secondary={agent.description} />
+                          <MenuItem 
+                            key={agent.id} 
+                            onClick={() => handleAgentSelect(agent)}
+                            sx={{ '&:hover': { bgcolor: alpha(agent.color, 0.1) } }}
+                          >
+                            <ListItemIcon sx={{ color: agent.color, minWidth: 36 }}>
+                              {agent.icon}
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary={`@${agent.name}`} 
+                              secondary={agent.description}
+                              primaryTypographyProps={{ sx: { color: agent.color } }}
+                            />
                           </MenuItem>
                         ))}
                       </MenuList>

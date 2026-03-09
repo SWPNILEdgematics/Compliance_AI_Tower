@@ -36,7 +36,11 @@ import {
   Menu as MenuIcon,
 } from '@mui/icons-material';
 
-export default function ComplianceReportCards() {
+interface ComplianceReportCardsProps {
+  someProp?: string;
+}
+
+export default function ComplianceReportCards({ someProp }: ComplianceReportCardsProps) {
   const theme = useTheme();
 
   return (
