@@ -106,15 +106,22 @@ export const useConversation = (agents: Agent[]) => {
     return data.convId;
   };
 
-  const startChat = async (
-    convId: string,
-    question: string,
-    agentId: string,
-    agentType: string,
-  ): Promise<string> => {
+const startChat = async (
+  convId: string,
+  question: string,
+  agentId: string,
+  agentType: string,
+): Promise<string | null> => {
     const accessToken = localStorage.getItem("accessToken");
     if (!accessToken) throw new Error("No access token found");
-
+    const isSummaryRequest = question.includes("summary of findings") ||
+                            question.includes("summarize the findings") ||
+                            question.includes("what are the findings") ||
+                            question.includes("can you summarize the findings") ||
+                            question.includes("give me a summary of the findings");
+    if (isSummaryRequest) {
+      throw new Error(`Failed to start chat: Summary requests are not supported in this flow`);      
+    }
     const response = await fetch("/api/chat/start", {
       method: "POST",
       headers: {
@@ -188,7 +195,6 @@ export const useConversation = (agents: Agent[]) => {
         prompt: inputValue,
         toolResponses: [],
       };
-      console.log("Adding new card:", newCard);
       setActiveCards(prev => [...prev, newCard]);
       setStreamingCard(mentionedAgent.id);
 

@@ -17,6 +17,7 @@ import {
 import AgentCard from "../../hooks/useConversation";
 import StreamSteps from "../components/StreamSteps";
 import ToolResponseRenderer from "../components/ToolResponseRenderer";
+import ComplianceReportCards from "./ComplianceReportCards";
 
 interface AgentMessageProps {
   card: AgentCard;
@@ -51,87 +52,56 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
   const hasStreamingResponses = (card.toolResponses && card.toolResponses.length > 0) || 
                                 (card.finalResponses && card.finalResponses.length > 0);
 
+  const lowerInput = card.prompt.toLowerCase();
+    // Extract agent mention (e.g., @complianceagent, @summaryagent, @riskagent)
+    const agentMatch = card.prompt.match(/@(\w+)/);
+    const agentName = agentMatch ? agentMatch[0] : ''; // Full mention with @
+    const agentNameWithoutAt = agentMatch ? agentMatch[1] : ''; // Just the name without @ 
+   // Check if the question is asking for summary of findings
+    const isSummaryRequest = lowerInput.includes("summary of findings") ||
+                            lowerInput.includes("summarize the findings") ||
+                            lowerInput.includes("what are the findings") ||
+                            lowerInput.includes("can you summarize the findings") ||
+                            lowerInput.includes("give me a summary of the findings");
+ 
   return (
     <Box>
-      {/* Prompt Message */}
-      {card.prompt && (
-        <Paper sx={{ mb: 3, p: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Avatar sx={{ bgcolor: getAgentColor(card.agent), width: 28, height: 28 }}>
-              {getAgentIcon(card.agent)}
-            </Avatar>
-            <Typography variant="body1" sx={{ fontWeight: 500 }}>
-              {card.prompt}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-              {card.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Typography>
-          </Box>
-        </Paper>
-      )}
+        {/* Prompt Message */}
+        {card.prompt && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Avatar sx={{ bgcolor: getAgentColor(card.agent), width: 28, height: 28 }}>
+                    {getAgentIcon(card.agent)}
+                </Avatar>
+                <Paper sx={{ mb: 3, p: 2, bgcolor: alpha(getAgentColor(card.agent), 0.05) }}>
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                        {card.prompt.split(/(@\w+)/g).map((part, index) => {
+                            // Check if the part is an agent mention (starts with @)
+                            if (part.startsWith('@')) {
+                                return (
+                                    <Box
+                                        component="span"
+                                        key={index}
+                                        sx={{
+                                            color: getAgentColor(card.agent),
+                                            fontWeight: 600,
+                                            px: 0.5,
+                                            borderRadius: 0.5,
+                                            display: 'inline-block'
+                                        }}
+                                    >
+                                        {part}
+                                    </Box>
+                                );
+                            }
+                            return part;
+                        })}
+                    </Typography>
+                </Paper>
+            </Box>
+        )}
 
       {/* Stream Steps */}
-      <StreamSteps card={card} />
-
-      {/* Tool Responses */}
-      {card.toolResponses && card.toolResponses.length > 0 && (
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'warning.main' }}>
-            Tool Responses {showStreamingIndicator ? '(Streaming)' : ''} ({card.toolResponses.length})
-          </Typography>
-          {card.toolResponses.map((response, index) => (
-            <Box key={`tool-${index}`} sx={{ mb: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <Chip 
-                  size="small" 
-                  label={response.toolName || 'Tool Response'} 
-                  sx={{ 
-                    bgcolor: alpha(theme.palette.primary.main, 0.1),
-                    fontSize: '0.7rem',
-                    height: 20
-                  }} 
-                />
-                {response.timestamp && (
-                  <Typography variant="caption" color="text.secondary">
-                    {response.timestamp}
-                  </Typography>
-                )}
-              </Box>
-              <ToolResponseRenderer data={response} />
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {/* Final Responses */}
-      {card.finalResponses && card.finalResponses.length > 0 && (
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
-            {showStreamingIndicator ? 'Streaming Responses' : 'Final Results'} ({card.finalResponses.length})
-          </Typography>
-          {card.finalResponses.map((response, index) => (
-            <Box key={`final-${index}`} sx={{ mb: 3 }}>
-              {response.timestamp && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                  {response.timestamp}
-                </Typography>
-              )}
-              <ToolResponseRenderer data={response} />
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {/* Keep backward compatibility for single finalResponse */}
-      {!card.finalResponses && card.finalResponse && !showStreamingIndicator && (
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
-            Final Result
-          </Typography>
-          <ToolResponseRenderer data={card.finalResponse} />
-        </Box>
-      )}
-
+      {/*  <StreamSteps card={card} /> */}
       {/* Streaming Indicator - Only show if actively streaming AND no responses yet */}
       {showStreamingIndicator && !hasStreamingResponses && (
         <Paper
@@ -156,7 +126,7 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
             <Box>
               <Typography variant="subtitle2" sx={{ color: getAgentColor(card.agent) }}>
                 {card.agent === "compliance" ? "Compliance Agent" :
-                 card.agent === "approvals" ? "Approvals Agent" : "Tower Agent"} is thinking...
+                 card.agent === "approvals" ? "Summary Agent" : "Risk Agent"} is thinking...
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 Preparing response ⚡
@@ -165,6 +135,74 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
           </Box>
         </Paper>
       )}
+      
+      {
+        isSummaryRequest ? (
+            <ComplianceReportCards someProp={agentNameWithoutAt} />
+        ) : (
+            <>
+            {/* Tool Responses */}
+            {card.toolResponses && card.toolResponses.length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'warning.main' }}>
+                    Tool Responses {showStreamingIndicator ? '(Streaming)' : ''} ({card.toolResponses.length})
+                </Typography>
+                {card.toolResponses.map((response, index) => (
+                    <Box key={`tool-${index}`} sx={{ mb: 3 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <Chip 
+                        size="small" 
+                        label={response.toolName || 'Tool Response'} 
+                        sx={{ 
+                            bgcolor: alpha(theme.palette.primary.main, 0.1),
+                            fontSize: '0.7rem',
+                            height: 20
+                        }} 
+                        />
+                        {response.timestamp && (
+                        <Typography variant="caption" color="text.secondary">
+                            {/* {response.timestamp} */}
+                        </Typography>
+                        )}
+                    </Box>
+                    <ToolResponseRenderer data={response} />
+                    </Box>
+                ))}
+                </Box>
+            )}
+
+            {/* Final Responses */}
+            {card.finalResponses && card.finalResponses.length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
+                    {showStreamingIndicator ? 'Streaming Responses' : 'Final Results'} ({card.finalResponses.length})
+                </Typography>
+                {card.finalResponses.map((response, index) => (
+                    <Box key={`final-${index}`} sx={{ mb: 3 }}>
+                    {response.timestamp && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                        {/* {response.timestamp} */}
+                        </Typography>
+                    )}
+                    <ToolResponseRenderer data={response} />
+                    </Box>
+                ))}
+                </Box>
+            )}
+
+            {/* Keep backward compatibility for single finalResponse */}
+            {!card.finalResponses && card.finalResponse && !showStreamingIndicator && (
+                <Box sx={{ mt: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
+                    Final Result
+                </Typography>
+                <ToolResponseRenderer data={card.finalResponse} />
+                </Box>
+            )}
+            </>
+        )
+        }  
+      
     </Box>
   );
 };

@@ -107,7 +107,7 @@ export default function DashboardPage() {
   const handleStreamMessage = useCallback((message: any, cardId: string, agentId: string) => {
     const { step, data, status, run_type } = message;
     let finalResponseData = data.content?.response || data.content || data; // Try different paths to get the actual response content
-    console.log("Extracted final response data:", finalResponseData);
+    
     switch (run_type) {
       case "<AGENT>":
         switch (status) {
@@ -234,7 +234,7 @@ export default function DashboardPage() {
 
   return (
     <Box sx={{ 
-      height: "100vh", 
+      height: "100%", 
       display: "flex", 
       flexDirection: "column", 
       bgcolor: theme.palette.background.default,
@@ -253,7 +253,7 @@ export default function DashboardPage() {
               gap: 2,
             }}>
               <Typography variant="h5" color="text.secondary">
-                Welcome to AI Agent Dashboard
+                Welcome to Compliance AI Agent Dashboard
               </Typography>
               <Typography variant="body1" color="text.secondary">
                 Type @ to mention an agent and start a conversation
@@ -272,7 +272,7 @@ export default function DashboardPage() {
           {isTyping && !streamingCard && (
             <Paper sx={{ p: 2, mt: 2, bgcolor: alpha(theme.palette.primary.main, 0.05), maxWidth: 200 }}>
               <Typography variant="body2" color="text.secondary">
-               Agent AI Assistant is thinking...
+               AI Assistant is gathering information...
               </Typography>
             </Paper>
           )}

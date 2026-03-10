@@ -168,7 +168,9 @@ export const useStream = () => {
 
     const controller = new AbortController();
     activeStreamControllers.current.set(runId, controller);
-
+    if(runId === "summary_request") {
+      return;
+    }
     const SSE_CHAT_URL = `/api/stream?runId=${runId}`;
     const selectedTenant = "e6e0a6cc-c509-45d4-b5a7-b92c619cb343";
 
