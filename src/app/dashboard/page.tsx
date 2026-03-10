@@ -7,7 +7,6 @@ import {
   Container,
   Typography,
   TextField,
-  Avatar,
   useTheme,
   alpha,
   Paper,
@@ -22,19 +21,13 @@ import {
   Fade,
   CircularProgress,
 } from "@mui/material";
-import {
-  Send as SendIcon,
-  Security as SecurityIcon,
-  Assignment as AssignmentIcon,
-  CheckCircle as CheckCircleIcon,
-} from "@mui/icons-material";
+
 import { useProtectedRoute } from "@/hooks/useProtectedRoute";
 import { useConversation, Agent } from "@/hooks/useConversation";
 import { useStream } from "@/hooks/useStream";
 import { useStreamHandler } from "@/hooks/useStreamHandler";
 import AgentMessage from "../components/AgentMessage";
 import { agents } from "../config/agents";
-import moment from "moment";
 
 export default function DashboardPage() {
   const theme = useTheme();
@@ -46,20 +39,21 @@ export default function DashboardPage() {
   const [inputValue, setInputValue] = useState("");
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
   // Custom hooks
   const {
     activeCards,
     setActiveCards,
     isTyping,
-    setIsTyping, // Make sure this is exported from useConversation
+    setIsTyping,
     streamingCard,
     setStreamingCard,
     sendMessage,
     clearConversation,
   } = useConversation(agents);
 
-  const { connectToStream, abortAllStreams, parseToolResponse } = useStream();
+  const { connectToStream, abortStream, parseToolResponse } = useStream();
   
   const {
     handleAgentThought,
@@ -73,40 +67,9 @@ export default function DashboardPage() {
     parseToolResponse
   );
 
-  // Clean up streams on unmount
-  useEffect(() => {
-    return () => {
-      abortAllStreams();
-    };
-  }, [abortAllStreams]);
-
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
-
-    try {
-      const { runId, cardId, mentionedAgent } = await sendMessage(inputValue);
-      
-      const accessToken = localStorage.getItem("accessToken");
-      if (!accessToken) throw new Error("No access token found");
-
-      // Connect to stream
-      connectToStream(
-        runId,
-        accessToken,
-        (message) => handleStreamMessage(message, cardId, mentionedAgent.id),
-        (error) => handleStreamError(error, cardId),
-        () => handleStreamClose(cardId, mentionedAgent.id) // Pass agentId
-      );
-    } catch (error) {
-      console.error("Error sending message:", error);
-    }
-
-    setInputValue("");
-  };
-
   const handleStreamMessage = useCallback((message: any, cardId: string, agentId: string) => {
     const { step, data, status, run_type } = message;
-    let finalResponseData = data.content?.response || data.content || data; // Try different paths to get the actual response content
+    let finalResponseData = data?.content?.response || data?.content || data;
     
     switch (run_type) {
       case "<AGENT>":
@@ -126,8 +89,14 @@ export default function DashboardPage() {
 
           case "<END_RESPONSE>":
             if (data) {
-               handleEndResponse(cardId, finalResponseData, agentId, () => {}, false);
+              handleEndResponse(cardId, finalResponseData, agentId, () => {}, false);
             }
+            break;
+          
+          case "<CLOSED>":
+            console.log("Stream properly closed for card:", cardId);
+            handleEndResponse(cardId, null, agentId, () => {}, true);
+            setActiveRunId(null); // Clear active runId when closed
             break;
             
           case "<ERROR>":
@@ -139,7 +108,6 @@ export default function DashboardPage() {
         
       case "<WORKFLOW>":
       case "<CUSTOM_WORKFLOW>":
-        // Handle workflow messages if needed
         console.log("Workflow message:", message);
         break;
         
@@ -157,13 +125,64 @@ export default function DashboardPage() {
     );
     setStreamingCard(null);
     setIsTyping(false);
+    setActiveRunId(null); // Clear active runId on error
   }, [setActiveCards, setStreamingCard, setIsTyping]);
 
   const handleStreamClose = useCallback((cardId: string, agentId: string) => {
     console.log("Stream closed for card:", cardId);
-    // Call handleEndResponse with isStreamClosed=true to finalize
     handleEndResponse(cardId, null, agentId, () => {}, true);
+    setActiveRunId(null); // Clear active runId when closed
   }, [handleEndResponse]);
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim()) return;
+
+    try {
+      // Abort any existing stream before starting a new one
+      if (activeRunId) {
+        console.log("Aborting existing stream:", activeRunId);
+        abortStream(activeRunId);
+        setActiveRunId(null);
+      }
+
+      const { runId, cardId, mentionedAgent } = await sendMessage(inputValue);
+      
+      const accessToken = localStorage.getItem("accessToken");
+      if (!accessToken) throw new Error("No access token found");
+
+      // Set the active runId
+      setActiveRunId(runId);
+
+      // Connect to stream - only ONE connection
+      const cleanup = connectToStream(
+        runId,
+        accessToken,
+        (message) => handleStreamMessage(message, cardId, mentionedAgent.id),
+        (error) => handleStreamError(error, cardId),
+        () => handleStreamClose(cardId, mentionedAgent.id)
+      );
+
+      // Store cleanup function if needed
+      if (cleanup) {
+        // You might want to store this in a ref for manual cleanup
+      }
+
+      setInputValue("");
+    } catch (error) {
+      console.error("Error sending message:", error);
+      setActiveRunId(null);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (activeRunId) {
+        console.log("Cleaning up stream on unmount:", activeRunId);
+        abortStream(activeRunId);
+      }
+    };
+  }, [activeRunId, abortStream]);
 
   // Input handlers
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,17 +229,21 @@ export default function DashboardPage() {
     }
   };
 
+  const handleClearConversation = useCallback(() => {
+    // Abort any active stream
+    if (activeRunId) {
+      abortStream(activeRunId);
+      setActiveRunId(null);
+    }
+    clearConversation();
+  }, [activeRunId, abortStream, clearConversation]);
+
   const filteredAgents = agents.filter((agent) => {
     const lastAtSymbol = inputValue.lastIndexOf("@", cursorPosition - 1);
     if (lastAtSymbol === -1) return false;
     const searchText = inputValue.slice(lastAtSymbol + 1, cursorPosition).toLowerCase();
     return agent.name.toLowerCase().includes(searchText);
   });
-
-  const getAgentColor = (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId);
-    return agent?.color || theme.palette.primary.main;
-  };
 
   if (isLoading) {
     return (
@@ -272,7 +295,7 @@ export default function DashboardPage() {
           {isTyping && !streamingCard && (
             <Paper sx={{ p: 2, mt: 2, bgcolor: alpha(theme.palette.primary.main, 0.05), maxWidth: 200 }}>
               <Typography variant="body2" color="text.secondary">
-               AI Assistant is gathering information...
+                AI Assistant is gathering information...
               </Typography>
             </Paper>
           )}
@@ -328,6 +351,7 @@ export default function DashboardPage() {
                 variant="outlined"
                 size="small"
                 inputRef={inputRef}
+                disabled={!!activeRunId} // Disable input while streaming
                 sx={{
                   "& .MuiOutlinedInput-root": {
                     borderRadius: 2,
@@ -338,7 +362,7 @@ export default function DashboardPage() {
               <Button
                 variant="contained"
                 onClick={handleSendMessage}
-                disabled={!inputValue.trim()}
+                disabled={!inputValue.trim() || !!activeRunId} // Disable while streaming
                 sx={{
                   bgcolor: theme.palette.primary.main,
                   color: "white",
@@ -356,8 +380,9 @@ export default function DashboardPage() {
               <Button 
                 variant="contained" 
                 color="secondary" 
-                onClick={clearConversation}
+                onClick={handleClearConversation}
                 size="small"
+                disabled={activeCards.length === 0}
               >
                 Start New Conversation
               </Button>
@@ -382,7 +407,6 @@ export default function DashboardPage() {
                           <MenuItem 
                             key={agent.id} 
                             onClick={() => handleAgentSelect(agent)}
-                            sx={{ '&:hover': { bgcolor: alpha(agent.color, 0.1) } }}
                           >
                             <ListItemIcon sx={{ color: agent.color, minWidth: 36 }}>
                               {agent.icon}

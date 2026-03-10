@@ -1,5 +1,5 @@
 // hooks/useStream.ts
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import moment from 'moment';
 
@@ -26,6 +26,7 @@ export interface ToolResponseData {
 
 export const useStream = () => {
   const activeStreamControllers = useRef<Map<string, AbortController>>(new Map());
+  const activeStreamCleanups = useRef<Map<string, () => void>>(new Map());
 
   const parseToolResponse = useCallback((
     toolName: string, 
@@ -96,7 +97,7 @@ export const useStream = () => {
     }
   }, []);
 
-  const formatChecklistResponse = (checklist: any, timestamp?: string, toolName?: string): ToolResponseData => {
+  const formatChecklistResponse = useCallback((checklist: any, timestamp?: string, toolName?: string): ToolResponseData => {
     const items = Object.values(checklist);
     if (items.length > 0 && typeof items[0] === 'object') {
       const allKeys = new Set<string>();
@@ -131,9 +132,9 @@ export const useStream = () => {
       timestamp,
       toolName
     };
-  };
+  }, []);
 
-  const formatFindingsResponse = (responseData: any, timestamp?: string, toolName?: string): ToolResponseData => {
+  const formatFindingsResponse = useCallback((responseData: any, timestamp?: string, toolName?: string): ToolResponseData => {
     const findings = responseData.findings;
     const headers = Object.keys(findings[0]).filter(key => key !== 'id');
     const rows = findings.map((finding: any) => {
@@ -151,7 +152,7 @@ export const useStream = () => {
       timestamp,
       toolName
     };
-  };
+  }, []);
 
   const connectToStream = useCallback((
     runId: string,
@@ -160,19 +161,58 @@ export const useStream = () => {
     onError: (error: any) => void,
     onClose: () => void
   ) => {
+    // Don't connect for summary_request
+    if (runId === "summary_request") {
+      return () => {};
+    }
+
     // Abort existing stream for this runId if any
     if (activeStreamControllers.current.has(runId)) {
+      console.log(`Aborting existing stream for runId: ${runId}`);
       activeStreamControllers.current.get(runId)?.abort();
       activeStreamControllers.current.delete(runId);
     }
 
+    // Clean up any existing cleanup function
+    if (activeStreamCleanups.current.has(runId)) {
+      activeStreamCleanups.current.get(runId)?.();
+      activeStreamCleanups.current.delete(runId);
+    }
+
     const controller = new AbortController();
     activeStreamControllers.current.set(runId, controller);
-    if(runId === "summary_request") {
-      return;
-    }
+    
     const SSE_CHAT_URL = `/api/stream?runId=${runId}`;
     const selectedTenant = "e6e0a6cc-c509-45d4-b5a7-b92c619cb343";
+
+    // Set a timeout to detect stale connections
+    const connectionTimeout = setTimeout(() => {
+      if (activeStreamControllers.current.has(runId)) {
+        console.log(`Connection timeout for runId: ${runId}`);
+        controller.abort();
+        activeStreamControllers.current.delete(runId);
+        onError(new Error('Connection timeout'));
+      }
+    }, 900000); // 15 minutes timeout
+
+    // Track if we've already closed to prevent multiple calls
+    let closed = false;
+
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      
+      clearTimeout(connectionTimeout);
+      if (activeStreamControllers.current.get(runId) === controller) {
+        console.log(`Cleaning up stream for runId: ${runId}`);
+        controller.abort();
+        activeStreamControllers.current.delete(runId);
+        activeStreamCleanups.current.delete(runId);
+      }
+    };
+
+    // Store cleanup function
+    activeStreamCleanups.current.set(runId, cleanup);
 
     fetchEventSource(SSE_CHAT_URL, {
       method: "GET",
@@ -186,38 +226,97 @@ export const useStream = () => {
         try {
           const parsedData = JSON.parse(event.data);
           onMessage(parsedData);
+          
+          // Check for CLOSED status in the message
+          if (parsedData.status === "<CLOSED>") {
+            console.log(`Received CLOSED status for runId: ${runId}`);
+            cleanup();
+            onClose();
+          }
         } catch (error) {
           console.error("Error parsing SSE message:", error);
         }
       },
       onerror: (error) => {
-        console.error("SSE Error:", error);
-        activeStreamControllers.current.delete(runId);
-        onError(error);
+        console.error("SSE Error for runId:", runId, error);
+        if (!closed) {
+          cleanup();
+          onError(error);
+        }
       },
       onclose: () => {
         console.log("Stream connection closed for runId:", runId);
-        activeStreamControllers.current.delete(runId);        
-        onClose();
+        if (!closed) {
+          cleanup();
+          onClose();
+        }
       },
+    }).catch(error => {
+      // Handle fetch errors
+      if (!closed) {
+        console.error("Fetch error for runId:", runId, error);
+        cleanup();
+        onError(error);
+      }
     });
 
+    // Return cleanup function
+    return cleanup;
+  }, []);
+
+  // Cleanup all streams on unmount
+  useEffect(() => {
     return () => {
-      controller.abort();
-      activeStreamControllers.current.delete(runId);
+      console.log('Cleaning up all streams on hook unmount');
+      activeStreamCleanups.current.forEach((cleanup, runId) => {
+        console.log(`Cleaning up stream for runId: ${runId}`);
+        cleanup();
+      });
+      activeStreamControllers.current.clear();
+      activeStreamCleanups.current.clear();
     };
   }, []);
 
   const abortAllStreams = useCallback(() => {
-    activeStreamControllers.current.forEach((controller) => {
-      controller.abort();
+    console.log('Aborting all streams');
+    activeStreamCleanups.current.forEach((cleanup, runId) => {
+      console.log(`Aborting stream for runId: ${runId}`);
+      cleanup();
     });
     activeStreamControllers.current.clear();
+    activeStreamCleanups.current.clear();
+  }, []);
+
+  const abortStream = useCallback((runId: string) => {
+    if (activeStreamCleanups.current.has(runId)) {
+      console.log(`Aborting stream for runId: ${runId}`);
+      activeStreamCleanups.current.get(runId)?.();
+    } else if (activeStreamControllers.current.has(runId)) {
+      console.log(`Force aborting stream for runId: ${runId}`);
+      activeStreamControllers.current.get(runId)?.abort();
+      activeStreamControllers.current.delete(runId);
+    }
+  }, []);
+
+  // Debug logging for active streams
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const activeCount = activeStreamControllers.current.size;
+      if (activeCount > 0) {
+        console.log('Active streams:', {
+          controllers: Array.from(activeStreamControllers.current.keys()),
+          cleanups: Array.from(activeStreamCleanups.current.keys())
+        });
+      }
+    }, 10000); // Log every 10 seconds
+    
+    return () => clearInterval(interval);
   }, []);
 
   return {
     connectToStream,
     abortAllStreams,
+    abortStream,
     parseToolResponse
   };
 };

@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Enable React Strict Mode for development
   reactStrictMode: true,
+  devIndicators: false,
   
   // Configure image optimization
   images: {
@@ -11,8 +12,6 @@ const nextConfig: NextConfig = {
   // Configure build output directory (optional)
    distDir: 'dist',
   
-  // Configure page extensions
-  // pageExtensions: ['tsx', 'ts', 'jsx', 'js'],
 };
 
 export default nextConfig;
