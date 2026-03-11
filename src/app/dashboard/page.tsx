@@ -1,4 +1,3 @@
-// app/dashboard/page.tsx (fixed version)
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
@@ -20,6 +19,7 @@ import {
   ListItemText,
   Fade,
   CircularProgress,
+  Chip,
 } from "@mui/material";
 
 import { useProtectedRoute } from "@/hooks/useProtectedRoute";
@@ -40,6 +40,9 @@ export default function DashboardPage() {
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+
+  // Refs
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   // Custom hooks
   const {
@@ -66,7 +69,7 @@ export default function DashboardPage() {
     setIsTyping,
     parseToolResponse
   );
-
+  
   const handleStreamMessage = useCallback((message: any, cardId: string, agentId: string) => {
     const { step, data, status, run_type } = message;
     let finalResponseData = data?.content?.response || data?.content || data;
@@ -96,7 +99,8 @@ export default function DashboardPage() {
           case "<CLOSED>":
             console.log("Stream properly closed for card:", cardId);
             handleEndResponse(cardId, null, agentId, () => {}, true);
-            setActiveRunId(null); // Clear active runId when closed
+            setActiveRunId(null);
+            cleanupRef.current = null; // Clear cleanup ref
             break;
             
           case "<ERROR>":
@@ -125,13 +129,15 @@ export default function DashboardPage() {
     );
     setStreamingCard(null);
     setIsTyping(false);
-    setActiveRunId(null); // Clear active runId on error
+    setActiveRunId(null);
+    cleanupRef.current = null; // Clear cleanup ref
   }, [setActiveCards, setStreamingCard, setIsTyping]);
 
   const handleStreamClose = useCallback((cardId: string, agentId: string) => {
     console.log("Stream closed for card:", cardId);
     handleEndResponse(cardId, null, agentId, () => {}, true);
-    setActiveRunId(null); // Clear active runId when closed
+    setActiveRunId(null);
+    cleanupRef.current = null; // Clear cleanup ref
   }, [handleEndResponse]);
 
   const handleSendMessage = async () => {
@@ -145,10 +151,16 @@ export default function DashboardPage() {
         setActiveRunId(null);
       }
 
+      // Clear any existing cleanup ref
+      if (cleanupRef.current) {
+        cleanupRef.current = null;
+      }
+
       const { runId, cardId, mentionedAgent } = await sendMessage(inputValue);
       
       const accessToken = localStorage.getItem("accessToken");
       if (!accessToken) throw new Error("No access token found");
+      if (!runId) throw new Error("No run ID returned");
 
       // Set the active runId
       setActiveRunId(runId);
@@ -162,23 +174,41 @@ export default function DashboardPage() {
         () => handleStreamClose(cardId, mentionedAgent.id)
       );
 
-      // Store cleanup function if needed
-      if (cleanup) {
-        // You might want to store this in a ref for manual cleanup
-      }
+      // Store cleanup function in ref for later use
+      cleanupRef.current = cleanup;
 
       setInputValue("");
     } catch (error) {
       console.error("Error sending message:", error);
       setActiveRunId(null);
+      cleanupRef.current = null;
     }
   };
+
+  // Manual cleanup function (can be called from UI if needed)
+  const handleManualCleanup = useCallback(() => {
+    if (cleanupRef.current) {
+      console.log("Manually cleaning up stream");
+      cleanupRef.current();
+      cleanupRef.current = null;
+      setActiveRunId(null);
+    } else if (activeRunId) {
+      console.log("Fallback: aborting stream by runId");
+      abortStream(activeRunId);
+      setActiveRunId(null);
+    }
+  }, [activeRunId, abortStream]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (activeRunId) {
-        console.log("Cleaning up stream on unmount:", activeRunId);
+      // Use cleanup ref if available, otherwise fallback to abortStream
+      if (cleanupRef.current) {
+        console.log("Cleaning up stream via cleanup ref on unmount");
+        cleanupRef.current();
+        cleanupRef.current = null;
+      } else if (activeRunId) {
+        console.log("Cleaning up stream via abortStream on unmount:", activeRunId);
         abortStream(activeRunId);
       }
     };
@@ -231,10 +261,15 @@ export default function DashboardPage() {
 
   const handleClearConversation = useCallback(() => {
     // Abort any active stream
-    if (activeRunId) {
+    if (cleanupRef.current) {
+      console.log("Cleaning up stream before clearing conversation");
+      cleanupRef.current();
+      cleanupRef.current = null;
+    } else if (activeRunId) {
+      console.log("Aborting stream before clearing conversation:", activeRunId);
       abortStream(activeRunId);
-      setActiveRunId(null);
     }
+    setActiveRunId(null);
     clearConversation();
   }, [activeRunId, abortStream, clearConversation]);
 
@@ -340,7 +375,7 @@ export default function DashboardPage() {
               ))}
             </Box>
 
-            {/* Input Row */}
+            {/* Input Row with Stop Button */}
             <Box sx={{ position: "relative", display: "flex", gap: 1 }}>
               <TextField
                 fullWidth
@@ -359,24 +394,38 @@ export default function DashboardPage() {
                   },
                 }}
               />
-              <Button
-                variant="contained"
-                onClick={handleSendMessage}
-                disabled={!inputValue.trim() || !!activeRunId} // Disable while streaming
-                sx={{
-                  bgcolor: theme.palette.primary.main,
-                  color: "white",
-                  px: 4,
-                  "&:hover": { bgcolor: theme.palette.primary.dark },
-                  "&.Mui-disabled": { bgcolor: alpha(theme.palette.primary.main, 0.3) },
-                }}
-              >
-                Send
-              </Button>
+              {activeRunId ? (
+                <Button
+                  variant="contained"
+                  color="error"
+                  onClick={handleManualCleanup}
+                  sx={{
+                    px: 4,
+                    "&:hover": { bgcolor: theme.palette.error.dark },
+                  }}
+                >
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  variant="contained"
+                  onClick={handleSendMessage}
+                  disabled={!inputValue.trim()}
+                  sx={{
+                    bgcolor: theme.palette.primary.main,
+                    color: "white",
+                    px: 4,
+                    "&:hover": { bgcolor: theme.palette.primary.dark },
+                    "&.Mui-disabled": { bgcolor: alpha(theme.palette.primary.main, 0.3) },
+                  }}
+                >
+                  Send
+                </Button>
+              )}
             </Box>
 
             {/* New Conversation Button */}
-            <Box sx={{ display: "flex", justifyContent: "flex-start" }}>
+            <Box sx={{ display: "flex", justifyContent: "flex-start", gap: 2 }}>
               <Button 
                 variant="contained" 
                 color="secondary" 
@@ -386,6 +435,16 @@ export default function DashboardPage() {
               >
                 Start New Conversation
               </Button>
+              
+              {/* Show active run indicator */}
+              {activeRunId && (
+                <Chip 
+                  size="small"
+                  label="Streaming Active"
+                  color="info"
+                  sx={{ ml: 'auto' }}
+                />
+              )}
             </Box>
           </Box>
 

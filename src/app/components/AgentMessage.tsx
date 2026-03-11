@@ -9,12 +9,8 @@ import {
   alpha,
   useTheme,
 } from "@mui/material";
-import {
-  Assignment as AssignmentIcon,
-  CheckCircle as CheckCircleIcon,
-  Security as SecurityIcon,
-} from "@mui/icons-material";
-import AgentCard from "../../hooks/useConversation";
+
+import { AgentCard } from "../../hooks/useConversation";
 import StreamSteps from "../components/StreamSteps";
 import ToolResponseRenderer from "../components/ToolResponseRenderer";
 import ComplianceReportCards from "./ComplianceReportCards";
@@ -38,9 +34,9 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
 
   const getAgentIcon = (agent: string) => {
     switch (agent) {
-      case "compliance": return <AssignmentIcon sx={{ fontSize: 16 }} />;
-      case "approvals": return <CheckCircleIcon sx={{ fontSize: 16 }} />;
-      case "tower": return <SecurityIcon sx={{ fontSize: 16 }} />;
+      case "compliance": return <img src="/CoplianceAgent.svg" alt="Compliance Agent" style={{ width: 16, height: 16 }} />;
+      case "approvals": return <img src="/SummaryAgent.png" alt="Summary Agent" style={{ width: 16, height: 16 }} />;
+      case "tower": return <img src="/RiskAgent.png" alt="Risk Agent" style={{ width: 16, height: 16 }} />;
       default: return null;
     }
   };
@@ -51,7 +47,7 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
   // Check if there are any streaming responses
   const hasResponses = (card.toolResponses && card.toolResponses.length > 0) || 
                        (card.finalResponses && card.finalResponses.length > 0) ||
-                       (card.finalResponse);
+                       (card.finalResponses);
 
   console.log("AgentMessage Rendered for agent:", card.finalResponses, card.toolResponses, "Streaming:", card.streaming);
   
@@ -147,7 +143,7 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
           </Avatar>
           <Paper sx={{ mb: 3, p: 2, bgcolor: alpha(getAgentColor(card.agent), 0.05) }}>
             <Typography variant="body1" sx={{ fontWeight: 500 }}>
-              {card.prompt.split(/(@\w+)/g).map((part, index) => {
+              {card.prompt.split(/(@\w+)/g).map((part:any, index:any) => {
                 // Check if the part is an agent mention (starts with @)
                 if (part.startsWith('@')) {
                   return (
@@ -186,7 +182,7 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
               <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'warning.main' }}>
                 Tool Responses {showStreamingIndicator ? '(Receiving...)' : ''} ({card.toolResponses.length})
               </Typography>
-              {card.toolResponses.map((response, index) => (
+              {card.toolResponses.map((response:any, index:any) => (
                 <Box key={`tool-${index}`} sx={{ mb: 3 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                     <Chip 
@@ -216,7 +212,7 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
               <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
                 {showStreamingIndicator ? 'Streaming Responses (Live)' : 'Final Results'} ({card.finalResponses.length})
               </Typography>
-              {card.finalResponses.map((response, index) => (
+              {card.finalResponses.map((response:any, index:any) => (
                 <Box key={`final-${index}`}>
                   {renderResponseContent(response, index, 'final')}
                 </Box>
@@ -225,12 +221,12 @@ const AgentMessage: React.FC<AgentMessageProps> = ({ card, streamingCard }) => {
           )}
 
           {/* Keep backward compatibility for single finalResponse */}
-          {!card.finalResponses && card.finalResponse && (
+          {!card.finalResponses && card.finalResponses && (
             <Box sx={{ mt: 3 }}>
               <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
                 Final Result {showStreamingIndicator ? '(Updating...)' : ''}
               </Typography>
-              {renderResponseContent(card.finalResponse, 0, 'final')}
+              {renderResponseContent(card.finalResponses, 0, 'final')}
             </Box>
           )}
 
